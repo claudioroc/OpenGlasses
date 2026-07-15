@@ -136,6 +136,7 @@ struct OpenGlassesApp: App {
         // Move any plaintext provider secrets out of UserDefaults and into the
         // Keychain. Must run before anything reads a secret (AppState, LLM, TTS…).
         Config.migrateSecretsToKeychainIfNeeded()
+        Config.migrateWakePhraseIfNeeded()
         // Defer Wearables SDK (Bluetooth permission) until after onboarding
         if Config.hasCompletedOnboarding {
             configureWearables()

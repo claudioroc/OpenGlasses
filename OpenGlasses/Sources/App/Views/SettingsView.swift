@@ -52,8 +52,8 @@ struct SettingsView: View {
                         Config.setAlternativeWakePhrases(Config.defaultAlternativesForPhrase(newValue))
                     }
                 )) {
-                    Text("Hey OpenGlasses").tag("hey openglasses")
                     Text("Hey Claude").tag("hey claude")
+                    Text("Hey OpenGlasses").tag("hey openglasses")
                     Text("Hey Jarvis").tag("hey jarvis")
                     Text("Hey Computer").tag("hey computer")
                     Text("Hey Assistant").tag("hey assistant")

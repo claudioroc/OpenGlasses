@@ -103,12 +103,34 @@ struct Config {
 
     // MARK: - Wake Word
 
+    /// One-time migration: upgrade from the old default wake phrase ("hey openglasses")
+    /// to "hey claude". Only fires once; users who manually chose a different phrase are
+    /// unaffected because their stored value won't match the old default.
+    static func migrateWakePhraseIfNeeded() {
+        let key = "wakePhraseV2Migrated"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        // Only touch the phrase if it was never set or is still the old default
+        let current = UserDefaults.standard.string(forKey: "wakePhrase")?.lowercased()
+        if current == nil || current == "hey openglasses" {
+            setWakePhrase("hey claude")
+            NSLog("[Config] Migrated wake phrase from 'hey openglasses' → 'hey claude'")
+            // Also update any personas still on the old phrase
+            var personas = savedPersonas
+            for i in personas.indices where personas[i].wakePhrase == "hey openglasses" {
+                personas[i].wakePhrase = "hey claude"
+                personas[i].alternativeWakePhrases = defaultAlternativesForPhrase("hey claude")
+            }
+            setSavedPersonas(personas)
+        }
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
     /// The primary wake word phrase (user-configurable)
     static var wakePhrase: String {
         if let phrase = UserDefaults.standard.string(forKey: "wakePhrase"), !phrase.isEmpty {
             return phrase.lowercased()
         }
-        return "hey openglasses"
+        return "hey claude"
     }
 
     static func setWakePhrase(_ phrase: String) {
