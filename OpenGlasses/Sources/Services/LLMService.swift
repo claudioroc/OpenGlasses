@@ -1536,7 +1536,7 @@ class LLMService: ObservableObject {
 
                 // Only attach Tools if the provider reliably supports function calling.
                 // Custom endpoints (Ollama/LMStudio) often crash with 400 if `tools` array is in the payload.
-                let providerSupportsTools = provider == .openai || provider == .groq || provider == .zai || provider == .qwen || provider == .openrouter
+                let providerSupportsTools = provider == .openai || provider == .groq || provider == .zai || provider == .qwen || provider == .openrouter || provider == .custom
 
                 if includeTools && providerSupportsTools {
                     let includeOpenClaw = Config.isOpenClawAgentActive && self.openClawBridge != nil
