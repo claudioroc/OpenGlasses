@@ -15,8 +15,10 @@ import UIKit
 /// (Lesson cribbed from the `glassbridge` project's LEARNINGS.md, which hit this 400 with
 /// native iPhone JPEGs.)
 enum LLMImagePreparer {
-    /// Longest edge (in pixels) we allow before downscaling — Anthropic's recommended ceiling.
-    static let maxLongEdge: CGFloat = 1568
+    /// Longest edge (in pixels) we allow before downscaling. Claude Sonnet 5 / Opus 4.7+
+    /// support high-resolution vision up to 2576 px on the long edge (older 1568 ceiling
+    /// wasted ~2.7x pixels — decisive for reading text/labels through the glasses camera).
+    static let maxLongEdge: CGFloat = 2576
     /// Byte ceiling for the encoded JPEG, kept comfortably under Anthropic's 5 MB hard limit.
     static let maxBytes = 4_500_000
     /// Frames below this long edge carry no usable content (the 1×1 placeholder failure mode).

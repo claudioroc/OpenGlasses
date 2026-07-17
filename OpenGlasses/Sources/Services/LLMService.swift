@@ -431,6 +431,11 @@ class LLMService: ObservableObject {
         isProcessing = true
         defer { isProcessing = false }
 
+        // Drop stale base64 images from history — only the current photo matters, and
+        // re-uploading old ones every turn is what overflowed the 1M context window
+        // (observed 2026-07-16: 1,093,397 tokens > 1,000,000).
+        conversationHistory = HistoryHygiene.pruneImages(conversationHistory, keepLast: 1)
+
         // Compress context window if conversation history has grown too large
         // Use LLM summarization in agentic mode, heuristic fallback otherwise
         if Config.agentModeEnabled {
@@ -1644,10 +1649,13 @@ class LLMService: ObservableObject {
             },
             finalize: { [weak self] turn in
                 guard let self else { throw LLMError.invalidResponse(provider.displayName) }
-                guard let message = turn.payload as? [String: Any],
-                      let responseText = message["content"] as? String else {
-                    throw LLMError.invalidResponse(provider.displayName)
-                }
+                // Gemini (and other OpenAI-compatible endpoints) omit `content` entirely on
+                // tool-call turns and can return null/absent content on a final turn — tolerate
+                // it exactly like the main parser (?? "") instead of hard-failing the whole
+                // request and cascading to a dead fallback model. Prefer any streamed/parsed
+                // turn.text if the payload content is missing.
+                let message = turn.payload as? [String: Any]
+                let responseText = (message?["content"] as? String) ?? turn.text
                 self.conversationHistory.append(["role": "assistant", "content": responseText])
                 return responseText
             }

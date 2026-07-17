@@ -30,6 +30,8 @@ class CameraService: ObservableObject {
     private var videoFrameListenerToken: (any AnyListenerToken)?
     private var errorListenerToken: (any AnyListenerToken)?
     private var photoContinuation: CheckedContinuation<Data, Error>?
+    /// Debounced post-capture teardown — keeps the camera session warm for rapid follow-up questions.
+    private var teardownTask: Task<Void, Never>?
 
     /// Whether camera permission has been granted (cached to avoid re-checking).
     var permissionGranted = false
@@ -271,13 +273,19 @@ class CameraService: ObservableObject {
             session.start()  // DAT 0.8.0: Stream.start() is synchronous
         }
 
-        // Wait for streaming state
+        // Wait for streaming state. The DAT 0.8.0 stream bounces through
+        // stopped/waitingForDevice during a cold start (~15-18s on this hardware), so a
+        // transient .stopped is NOT fatal — nudge start() again and keep waiting within
+        // the single deadline. Throwing here used to trigger a reset that killed the
+        // stream 1-2s before it came up (observed 2026-07-16).
         let deadline = ContinuousClock.now + .seconds(timeout)
+        var restartNudges = 0
         while ContinuousClock.now < deadline {
             if session.state == .streaming { break }
-            if session.state == .stopped {
-                NSLog("[Camera] Session stopped unexpectedly while waiting for streaming")
-                throw CameraError.streamNotReady
+            if session.state == .stopped && restartNudges < 3 {
+                restartNudges += 1
+                NSLog("[Camera] Stream idle during warm-up — nudging start() (%d)", restartNudges)
+                session.start()
             }
             try await Task.sleep(nanoseconds: 500_000_000)
         }
@@ -324,24 +332,31 @@ class CameraService: ObservableObject {
         isCaptureInProgress = true
         defer { isCaptureInProgress = false }
 
-        try await ensurePermission()
-        try await ensureSession()
+        // Reuse a still-warm session from a recent capture (cancel its pending teardown).
+        teardownTask?.cancel()
+        teardownTask = nil
 
-        // Wait for stream to be ready (start if needed)
+        try await ensurePermission()
+
+        // Establish session + stream with retries. Session creation lives INSIDE the
+        // retry loop: MWDAT needs settle time after a reset, and a too-eager recreate
+        // throws "A session already exists for this device" (seen 2026-07-16), which
+        // previously escaped the loop and dumped the capture onto the iPhone camera.
         var lastError: Error?
         for attempt in 1...2 {
             do {
-                try await waitForStreaming(timeout: attempt == 1 ? 10 : 20)
+                try await ensureSession()
+                // Generous single window — the camera cold-starts in ~15-18s and the
+                // wait loop now tolerates the warm-up bounce without being reset.
+                try await waitForStreaming(timeout: 30)
                 lastError = nil
                 break
             } catch {
-                NSLog("[Camera] Streaming wait attempt %d failed: %@", attempt, error.localizedDescription)
+                NSLog("[Camera] Stream setup attempt %d failed: %@", attempt, error.localizedDescription)
                 lastError = error
                 if attempt < 2 {
-                    // Reset session and retry
                     await resetSession()
-                    try await ensureSession()
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
             }
         }
@@ -365,9 +380,9 @@ class CameraService: ObservableObject {
                 return
             }
 
-            // Timeout after 5 seconds — fall back to latest video frame
+            // Timeout after 8 seconds — fall back to latest video frame
             Task {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
                 if let cont = self.photoContinuation {
                     self.photoContinuation = nil
                     if let fallback = self.latestFrameAsJPEG() {
@@ -389,7 +404,14 @@ class CameraService: ObservableObject {
         // Full reset is required because MWDAT StreamSession can't reliably restart
         // after stop — a fresh session must be created for the next capture.
         if !isStreaming {
-            await resetSession()
+            teardownTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 120_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                if !self.isStreaming && !self.isCaptureInProgress {
+                    NSLog("[Camera] Keep-warm window elapsed — tearing down session")
+                    await self.resetSession()
+                }
+            }
         }
 
         print("📸 Photo captured: \(photoData.count) bytes")
