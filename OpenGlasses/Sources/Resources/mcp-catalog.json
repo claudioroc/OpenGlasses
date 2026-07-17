@@ -74,6 +74,20 @@
       "scopes": ["Read issues", "Create issues", "Search projects"],
       "icon": "list.bullet.rectangle.fill",
       "notes": "Linear's hosted MCP endpoint. Listed for completeness; live connection lands when SSE + OAuth ship."
+    },
+    {
+      "id": "m4-overseer",
+      "label": "Home Overseer (M4)",
+      "transport": "http",
+      "url_template": "https://m4-mcp.rochasilva.co.uk/mcp",
+      "auth": {
+        "kind": "bearer",
+        "hint": "Token from M4 Keychain: glasses-mcp-token"
+      },
+      "fields": [],
+      "scopes": ["Home control", "Media center", "Property deals", "Messages", "Lifelog memory"],
+      "icon": "house.badge.wifi",
+      "notes": "Home infrastructure via Mac Mini M4. Controls Home Assistant, media center, RE pipeline, messages, and lifelog memory."
     }
   ]
 }

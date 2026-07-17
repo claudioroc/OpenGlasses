@@ -67,6 +67,7 @@ final class MCPTransportTests: XCTestCase {
 
     func testHTTPTransportBuildsExpectedRequest() async throws {
         MockURLProtocol.reset()
+        HTTPTransport.resetSessions()
         MockURLProtocol.responseBody = Data(#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#.utf8)
 
         let server = MCPServerConfig(id: "s", label: "Notion", url: "https://example.test/mcp",
@@ -76,16 +77,17 @@ final class MCPTransportTests: XCTestCase {
         let data = try await transport.request(
             ["jsonrpc": "2.0", "id": 1, "method": "tools/list"], server: server)
 
-        // Response is returned unchanged.
+        // Response is returned unchanged (Content-Type: application/json from mock skips SSE parsing).
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         XCTAssertEqual((json?["result"] as? [String: Any])?["ok"] as? Bool, true)
 
-        // The outbound request matches the original inline behaviour: POST, JSON content type,
-        // auth header applied, and the payload serialised into the body.
+        // The last outbound request is the tools/list (after the init handshake): POST, JSON
+        // content type, Accept header for MCP, auth header applied, payload serialised into body.
         let captured = try XCTUnwrap(MockURLProtocol.lastRequest)
         XCTAssertEqual(captured.httpMethod, "POST")
         XCTAssertEqual(captured.url?.absoluteString, "https://example.test/mcp")
         XCTAssertEqual(captured.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(captured.value(forHTTPHeaderField: "Accept"), "application/json, text/event-stream")
         XCTAssertEqual(captured.value(forHTTPHeaderField: "Authorization"), "Bearer secret-token")
 
         let body = try XCTUnwrap(MockURLProtocol.lastBody)
@@ -94,7 +96,8 @@ final class MCPTransportTests: XCTestCase {
     }
 
     func testHTTPTransportThrowsOnBadURL() async {
-        let server = MCPServerConfig(id: "s", label: "Bad", url: "", headers: [:], enabled: true)
+        HTTPTransport.resetSessions()
+        let server = MCPServerConfig(id: "bad", label: "Bad", url: "", headers: [:], enabled: true)
         do {
             _ = try await HTTPTransport().request([:], server: server)
             XCTFail("expected badURL")
@@ -107,10 +110,11 @@ final class MCPTransportTests: XCTestCase {
 
     func testHTTPTransportThrowsOnHTTPError() async {
         MockURLProtocol.reset()
+        HTTPTransport.resetSessions()
         MockURLProtocol.statusCode = 503
         MockURLProtocol.responseBody = Data("upstream down".utf8)
 
-        let server = MCPServerConfig(id: "s", label: "Down", url: "https://example.test/mcp",
+        let server = MCPServerConfig(id: "down", label: "Down", url: "https://example.test/mcp",
                                      headers: [:], enabled: true)
         let transport = HTTPTransport(session: MockURLProtocol.session())
         do {
@@ -122,6 +126,52 @@ final class MCPTransportTests: XCTestCase {
         } catch {
             XCTFail("unexpected error: \(error)")
         }
+    }
+
+    // MARK: - SSE response parsing
+
+    func testHTTPTransportParsesSSEResponse() async throws {
+        MockURLProtocol.reset()
+        HTTPTransport.resetSessions()
+        // Simulate a server that returns SSE-formatted responses (like FastMCP streamable HTTP).
+        let sseBody = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"test_tool\"}]}}\n\n"
+        MockURLProtocol.responseBody = Data(sseBody.utf8)
+        MockURLProtocol.responseHeaders = ["Content-Type": "text/event-stream"]
+
+        let server = MCPServerConfig(id: "sse-test", label: "SSE", url: "https://example.test/mcp",
+                                     headers: [:], enabled: true)
+        let transport = HTTPTransport(session: MockURLProtocol.session())
+
+        let data = try await transport.request(
+            ["jsonrpc": "2.0", "id": 1, "method": "tools/list"], server: server)
+
+        // The SSE framing should be stripped — we get the raw JSON-RPC response.
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let result = json?["result"] as? [String: Any]
+        let tools = result?["tools"] as? [[String: Any]]
+        XCTAssertEqual(tools?.first?["name"] as? String, "test_tool")
+    }
+
+    func testHTTPTransportSendsSessionIDAfterInit() async throws {
+        MockURLProtocol.reset()
+        HTTPTransport.resetSessions()
+        // Return a session ID in response headers to simulate FastMCP.
+        MockURLProtocol.responseBody = Data(#"{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05"}}"#.utf8)
+        MockURLProtocol.responseHeaders = [
+            "Content-Type": "application/json",
+            "mcp-session-id": "test-session-42",
+        ]
+
+        let server = MCPServerConfig(id: "session-test", label: "Sessioned", url: "https://example.test/mcp",
+                                     headers: [:], enabled: true)
+        let transport = HTTPTransport(session: MockURLProtocol.session())
+
+        _ = try await transport.request(
+            ["jsonrpc": "2.0", "id": 1, "method": "tools/list"], server: server)
+
+        // The last request (tools/list) should carry the session ID obtained during init.
+        let captured = try XCTUnwrap(MockURLProtocol.lastRequest)
+        XCTAssertEqual(captured.value(forHTTPHeaderField: "mcp-session-id"), "test-session-42")
     }
 }
 
@@ -135,12 +185,14 @@ final class MockURLProtocol: URLProtocol {
     nonisolated(unsafe) static var lastBody: Data?
     nonisolated(unsafe) static var responseBody = Data("{}".utf8)
     nonisolated(unsafe) static var statusCode = 200
+    nonisolated(unsafe) static var responseHeaders: [String: String] = ["Content-Type": "application/json"]
 
     static func reset() {
         lastRequest = nil
         lastBody = nil
         responseBody = Data("{}".utf8)
         statusCode = 200
+        responseHeaders = ["Content-Type": "application/json"]
     }
 
     static func session() -> URLSession {
@@ -158,7 +210,7 @@ final class MockURLProtocol: URLProtocol {
 
         let response = HTTPURLResponse(
             url: request.url!, statusCode: MockURLProtocol.statusCode,
-            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+            httpVersion: "HTTP/1.1", headerFields: MockURLProtocol.responseHeaders)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: MockURLProtocol.responseBody)
         client?.urlProtocolDidFinishLoading(self)
