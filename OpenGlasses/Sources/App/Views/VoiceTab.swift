@@ -10,6 +10,8 @@ import SwiftUI
 ///   5. Hero capsule + floating action buttons (bottom)
 struct VoiceTab: View {
     @EnvironmentObject var appState: AppState
+    @AppStorage("silentMode") private var qcSilent = false
+    @AppStorage("smartCameraEnabled") private var qcSmartCam = false
     @State private var showPreview = false
     @State private var showModelPicker = false
     @State private var showPersonaPicker = false
@@ -25,6 +27,42 @@ struct VoiceTab: View {
             Color(.systemBackground).ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Quick controls (added 2026-07-24): mic / silent / smart-cam / live / persona
+                HStack(spacing: 22) {
+                    Button { appState.micMuted.toggle() } label: {
+                        Image(systemName: appState.micMuted ? "mic.slash.fill" : "mic.fill")
+                            .foregroundColor(appState.micMuted ? .red : .primary)
+                    }
+                    Button { qcSilent.toggle() } label: {
+                        Image(systemName: qcSilent ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .foregroundColor(qcSilent ? .orange : .primary)
+                    }
+                    Button { qcSmartCam.toggle() } label: {
+                        Image(systemName: qcSmartCam ? "camera.fill" : "camera")
+                            .foregroundColor(qcSmartCam ? .blue : .primary)
+                    }
+                    Button {
+                        appState.switchMode(to: appState.currentMode == .geminiLive ? .direct : .geminiLive)
+                    } label: {
+                        Image(systemName: appState.currentMode == .geminiLive ? "dot.radiowaves.left.and.right" : "waveform")
+                            .foregroundColor(appState.currentMode == .geminiLive ? .green : .primary)
+                    }
+                    Menu {
+                        ForEach(Config.enabledPersonas, id: \.id) { p in
+                            Button(p.name) {
+                                appState.activePersona = p
+                                Config.setActiveModelId(p.modelId)
+                                Config.setActivePresetId(p.presetId)
+                                appState.llmService.refreshActiveModel()
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "theatermasks.fill")
+                            .foregroundColor(appState.activePersona != nil ? .purple : .primary)
+                    }
+                }
+                .font(.title3)
+                .padding(.vertical, 8)
                 // Recording indicator
                 if appState.videoRecorder.isRecording {
                     recordingBadge

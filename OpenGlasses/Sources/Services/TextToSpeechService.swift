@@ -1,5 +1,6 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
+import NaturalLanguage
 
 /// Text-to-speech service using ElevenLabs for natural voice
 /// Falls back to iOS AVSpeechSynthesizer if no API key or quota exhausted
@@ -643,8 +644,8 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     private func speakWithiOS(text: String) async {
         let utterance = AVSpeechUtterance(string: text)
 
-        // Pick the best available English voice: premium > enhanced > default
-        let voice = Self.bestAvailableVoice()
+        // Pick the best available voice for the language of this text (premium > enhanced > default)
+        let voice = Self.bestAvailableVoice(for: text)
         utterance.voice = voice
         print("🔊 iOS TTS: Using voice \(voice?.name ?? "system default") (\(voice?.identifier ?? "nil"), quality=\(voice?.quality.rawValue ?? -1))")
 
@@ -660,33 +661,50 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     }
 
     /// Resolve the iOS TTS voice — uses saved preference or auto-selects best available.
-    private static func bestAvailableVoice() -> AVSpeechSynthesisVoice? {
+    private static func bestAvailableVoice(for text: String = "") -> AVSpeechSynthesisVoice? {
         // Use saved preference if set
         let preferred = Config.iosTTSVoiceId
         if !preferred.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: preferred) {
             return voice
         }
 
-        // Auto-select: best quality English voice available
+        // Match the voice to the language actually being spoken (replies may be in any
+        // language, e.g. Portuguese). Falls back to English if no matching voice is installed.
+        let langPrefix = detectedLanguagePrefix(for: text)
         let allVoices = AVSpeechSynthesisVoice.speechVoices()
-        let englishVoices = allVoices.filter { $0.language.hasPrefix("en") }
+        let matching = allVoices.filter { $0.language.hasPrefix(langPrefix) }
+        let pool = matching.isEmpty ? allVoices.filter { $0.language.hasPrefix("en") } : matching
 
         // Sort by quality descending (premium=3, enhanced=2, default=1)
-        let sorted = englishVoices.sorted { $0.quality.rawValue > $1.quality.rawValue }
-
-        if let best = sorted.first, best.quality.rawValue >= 2 {
+        let sorted = pool.sorted { $0.quality.rawValue > $1.quality.rawValue }
+        if let best = sorted.first {
             return best
         }
 
-        // Fallback to standard en-US
-        return AVSpeechSynthesisVoice(language: "en-US")
+        // Last resort: a standard voice in the target language, else en-US.
+        return AVSpeechSynthesisVoice(language: matching.isEmpty ? "en-US" : langPrefix)
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    /// Best-effort dominant-language prefix ("pt", "en", ...) of the given text. Uses
+    /// NaturalLanguage when there is enough text, else the device language (default English).
+    private static func detectedLanguagePrefix(for text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count >= 12 {
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(trimmed)
+            if let lang = recognizer.dominantLanguage?.rawValue {
+                return String(lang.prefix(2))
+            }
+        }
+        return String(Config.preferredLanguageCode.prefix(2))
     }
 
     /// All English voices available on this device, grouped by quality.
     static func availableVoices() -> [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("en") }
             .sorted { lhs, rhs in
+                if lhs.language != rhs.language { return lhs.language < rhs.language }
                 if lhs.quality != rhs.quality { return lhs.quality.rawValue > rhs.quality.rawValue }
                 return lhs.name < rhs.name
             }

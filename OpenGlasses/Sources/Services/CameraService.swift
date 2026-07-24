@@ -380,9 +380,11 @@ class CameraService: ObservableObject {
                 return
             }
 
-            // Timeout after 8 seconds — fall back to latest video frame
+            // Timeout after 15 seconds — fall back to latest video frame. Raised from 8s
+            // (2026-07-24): the Ray-Ban SDK capture can take 3-10s on a cold/slow link, and
+            // an 8s cutoff fired first → empty answers + a wasted late photo ("no continuation").
             Task {
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
                 if let cont = self.photoContinuation {
                     self.photoContinuation = nil
                     if let fallback = self.latestFrameAsJPEG() {

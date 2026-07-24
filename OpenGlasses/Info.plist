@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -25,13 +23,15 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>mwdat-YOUR_META_APP_ID</string>
+				<string>mwdat-1037617405400911</string>
 				<string>openglasses</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>fb-viewapp</string>
@@ -92,11 +92,11 @@
 	<key>MWDAT</key>
 	<dict>
 		<key>AppLinkURLScheme</key>
-		<string>openglasses://</string>
+		<string>mwdat-1037617405400911://</string>
 		<key>ClientToken</key>
-		<string>AR|YOUR_META_APP_ID|YOUR_CLIENT_TOKEN_HASH</string>
+		<string>AR|1037617405400911|5f737e9ec608ed5a51799883c782a176</string>
 		<key>MetaAppID</key>
-		<string>YOUR_META_APP_ID</string>
+		<string>1037617405400911</string>
 		<key>TeamID</key>
 		<string>$(DEVELOPMENT_TEAM)</string>
 	</dict>
@@ -121,6 +121,10 @@
 	<string>OpenGlasses uses Bluetooth to connect to your Ray-Ban Meta smart glasses.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>OpenGlasses uses Bluetooth to connect to your Ray-Ban Meta smart glasses.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>OpenGlasses accesses your calendar to tell you about upcoming events and create new ones hands-free.</string>
 	<key>NSCalendarsUsageDescription</key>
@@ -136,15 +140,11 @@
 	<key>NSHomeKitUsageDescription</key>
 	<string>OpenGlasses controls your smart home devices hands-free through your glasses.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-		<string>OpenGlasses scans your local network to find self-hosted AI servers (Ollama, LM Studio, vLLM, LocalAI) so you can connect without typing an address.</string>
-		<key>NSBonjourServices</key>
-		<array>
-			<string>_http._tcp</string>
-		</array>
-		<key>NSLocationWhenInUseUsageDescription</key>
-	<string>OpenGlasses uses your location to provide contextually relevant answers based on where you are.</string>
+	<string>OpenGlasses scans your local network to find self-hosted AI servers (Ollama, LM Studio, vLLM, LocalAI) so you can connect without typing an address.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>OpenGlasses uses your location in the background to alert you when you arrive at or leave a place you set a location reminder for.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OpenGlasses uses your location to provide contextually relevant answers based on where you are.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OpenGlasses needs microphone access to listen for wake words and transcribe your voice commands.</string>
 	<key>NSMotionUsageDescription</key>

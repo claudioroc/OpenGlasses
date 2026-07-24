@@ -133,6 +133,7 @@ struct OpenGlassesApp: App {
     @State private var isHipaaLocked = Config.hipaaMode
 
     init() {
+        FileLogger.start()
         // Move any plaintext provider secrets out of UserDefaults and into the
         // Keychain. Must run before anything reads a secret (AppState, LLM, TTS…).
         Config.migrateSecretsToKeychainIfNeeded()
@@ -3543,5 +3544,22 @@ struct NowPlayingSnapshot {
         if let a = artist { parts.append("artist: \"\(a)\"") }
         if let al = albumTitle, al != title { parts.append("album: \"\(al)\"") }
         return "NOW PLAYING (paused when user spoke): \(parts.joined(separator: ", ")). If the user asks about the song, podcast, or what was playing, you already know this."
+    }
+}
+
+// MARK: - File logging (added 2026-07-24 idevicesyslog dead on iOS 26; mirror print/NSLog to a file)
+enum FileLogger {
+    static func start() {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = dir.appendingPathComponent("openglasses.log")
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? UInt64, size > 3_000_000 {
+            try? FileManager.default.removeItem(at: url)
+        }
+        _ = freopen(url.path, "a+", stderr)
+        _ = freopen(url.path, "a+", stdout)
+        setvbuf(stdout, nil, _IOLBF, 0)
+        setvbuf(stderr, nil, _IOLBF, 0)
+        NSLog("[FileLogger] runtime log -> %@", url.path)
     }
 }
