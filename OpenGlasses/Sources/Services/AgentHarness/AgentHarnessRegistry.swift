@@ -18,14 +18,15 @@ final class AgentHarnessRegistry {
         harnesses.first { $0.kind == kind }
     }
 
-    /// The harness to dispatch to: the user's configured default, else the first configured one,
-    /// else `nil` (nothing set up). `defaultKind` is injected so the resolution is testable without
-    /// touching `Config`.
+    /// The harness to dispatch to: the user's configured default, else a verified OpenClaw/custom
+    /// endpoint, else `nil`. Pending Codex/Claude adapters are never selected as an implicit
+    /// fallback; the user must choose them explicitly while their live contracts remain unverified.
+    /// `defaultKind` is injected so the resolution is testable without touching `Config`.
     func active(defaultKind: AgentHarnessKind) -> AgentHarness? {
         if let preferred = harness(for: defaultKind), preferred.isConfigured {
             return preferred
         }
-        return configured.first
+        return configured.first { $0.kind == .openclaw || $0.kind == .custom }
     }
 
     /// Convenience resolving the default from `Config`.

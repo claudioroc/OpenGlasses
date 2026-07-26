@@ -19,6 +19,7 @@ struct BottomControlBar: View {
     @Binding var showSettings: Bool
     @Binding var showModelPicker: Bool
     @Binding var showPreview: Bool
+    @Binding var showPersonaPicker: Bool
     var showChatInput: Binding<Bool>? = nil
 
     private var isRealtime: Bool { appState.currentMode.isRealtime }
@@ -69,6 +70,15 @@ struct BottomControlBar: View {
                     truncateLabel: true
                 ) {
                     showModelPicker = true
+                }
+                .frame(maxWidth: .infinity)
+
+                BarButton(
+                    icon: "theatermasks",
+                    label: appState.activePersona?.name ?? Config.persona(named: "Claude")?.name ?? "Modes",
+                    truncateLabel: true
+                ) {
+                    showPersonaPicker = true
                 }
                 .frame(maxWidth: .infinity)
 

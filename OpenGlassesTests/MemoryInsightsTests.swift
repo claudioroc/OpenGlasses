@@ -7,30 +7,55 @@ import XCTest
 @MainActor
 final class MemoryInsightsTests: XCTestCase {
 
-    private func thread(_ messages: [(String, String)]) -> ConversationThread {
+    private func thread(_ messages: [(String, String, [String])]) -> ConversationThread {
         var t = ConversationThread(mode: "direct", title: "T")
-        t.messages = messages.map { ConversationMessage(role: $0.0, content: $0.1) }
+        t.messages = messages.map {
+            ConversationMessage(role: $0.0, content: $0.1, toolNames: $0.2)
+        }
         return t
     }
 
     func testBuildEventsMapsEveryMessage() {
         let threads = [
-            thread([("user", "tell me about the museum app"), ("assistant", "sure")]),
-            thread([("user", "remind me about the museum launch")]),
+            thread([("user", "tell me about the museum app", []),
+                    ("assistant", "sure", ["web_search"])]),
+            thread([("user", "remind me about the museum launch", [])]),
         ]
         let events = InsightsService.buildEvents(from: threads)
         XCTAssertEqual(events.count, 3)
         XCTAssertEqual(events.filter { $0.role == "user" }.count, 2)
-        XCTAssertTrue(events.allSatisfy { $0.toolNames.isEmpty })
+        XCTAssertEqual(events.flatMap(\.toolNames), ["web_search"])
         XCTAssertEqual(events.first?.text, "tell me about the museum app")
     }
 
     func testReportFromBuiltEventsSurfacesTopics() {
-        let threads = [thread([("user", "the museum proposal"), ("user", "museum budget")])]
+        let threads = [thread([("user", "the museum proposal", []),
+                               ("user", "museum budget", [])])]
         let events = InsightsService.buildEvents(from: threads)
         let report = InsightsAggregator.aggregate(events, since: Date().addingTimeInterval(-3600), now: Date())
         XCTAssertEqual(report.userTurns, 2)
         XCTAssertEqual(report.topTopics.first?.name, "museum")
+    }
+
+    func testReportFromBuiltEventsSurfacesPersistedTools() {
+        let threads = [thread([
+            ("user", "what is on today", []),
+            ("assistant", "Two events", ["calendar"]),
+            ("user", "and tomorrow", []),
+            ("assistant", "One event", ["calendar", "get_weather"]),
+        ])]
+        let events = InsightsService.buildEvents(from: threads)
+        let report = InsightsAggregator.aggregate(
+            events, since: Date().addingTimeInterval(-3600), now: Date())
+        XCTAssertEqual(report.topTools.first?.name, "calendar")
+        XCTAssertEqual(report.topTools.first?.count, 2)
+    }
+
+    func testLegacyMessageWithoutToolNamesStillDecodes() throws {
+        let data = Data(#"{"id":"legacy","role":"assistant","content":"ok","imageAttached":false,"timestamp":0}"#.utf8)
+        let message = try JSONDecoder().decode(ConversationMessage.self, from: data)
+        XCTAssertNil(message.toolNames)
+        XCTAssertEqual(message.content, "ok")
     }
 
     func testRecapTextReadsNaturally() {

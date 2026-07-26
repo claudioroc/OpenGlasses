@@ -125,6 +125,61 @@ struct Config {
         UserDefaults.standard.set(true, forKey: key)
     }
 
+    /// One-time repair for installs that persisted two unsafe historical defaults:
+    /// `claudeRemote` as the voice code-agent harness and Wine Sommelier as the
+    /// general assistant prompt. The remote Claude adapter is not a transport to
+    /// the user's M4; OpenClaw is the only verified phone-side code-agent path.
+    ///
+    /// The migration is deliberately narrow and versioned. It does not overwrite
+    /// later choices after the first repaired launch.
+    static func migrateAssistantDefaultsIfNeeded() {
+        let migrationKey = "assistantDefaults202607Migrated"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        if UserDefaults.standard.string(forKey: "defaultAgentHarness") == AgentHarnessKind.claudeRemote.rawValue {
+            setDefaultAgentHarness(.openclaw)
+            NSLog("[Config] Migrated default code-agent harness from claudeRemote to openclaw")
+        }
+
+        if activePresetId == "preset-wine-sommelier" {
+            setActivePresetId("preset-default")
+            NSLog("[Config] Reset the historical Wine Sommelier default prompt")
+        }
+
+        var personas = savedPersonas
+        if let claudeIndex = personas.firstIndex(where: { $0.name.caseInsensitiveCompare("Claude") == .orderedSame }) {
+            if personas[claudeIndex].presetId == "preset-wine-sommelier" {
+                personas[claudeIndex].presetId = "preset-default"
+            }
+            personas[claudeIndex].enabled = true
+        } else if let legacyIndex = personas.firstIndex(where: {
+            $0.name == "OpenGlasses" && !$0.id.hasPrefix("mode-")
+        }) {
+            personas[legacyIndex].name = "Claude"
+            personas[legacyIndex].wakePhrase = "hey claude"
+            personas[legacyIndex].alternativeWakePhrases = defaultAlternativesForPhrase("hey claude")
+            personas[legacyIndex].presetId = "preset-default"
+            personas[legacyIndex].enabled = true
+        } else {
+            personas.insert(
+                Persona(
+                    id: "mode-claude",
+                    name: "Claude",
+                    wakePhrase: "hey claude",
+                    alternativeWakePhrases: defaultAlternativesForPhrase("hey claude"),
+                    modelId: activeModelId,
+                    presetId: "preset-default",
+                    enabled: true,
+                    icon: "sparkles",
+                    isBuiltIn: true
+                ),
+                at: 0
+            )
+        }
+        setSavedPersonas(personas)
+        UserDefaults.standard.set(true, forKey: migrationKey)
+    }
+
     /// The primary wake word phrase (user-configurable)
     static var wakePhrase: String {
         if let phrase = UserDefaults.standard.string(forKey: "wakePhrase"), !phrase.isEmpty {
@@ -2867,4 +2922,3 @@ struct Config {
 
     static func setLocalAgentEnabled(_ value: Bool) { localAgentEnabled = value }
 }
-

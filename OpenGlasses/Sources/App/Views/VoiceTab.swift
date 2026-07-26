@@ -75,6 +75,7 @@ struct VoiceTab: View {
                         openAISession: openAISession,
                         showPreview: $showPreview,
                         showModelPicker: $showModelPicker,
+                        showPersonaPicker: $showPersonaPicker,
                         showChatInput: $showChatInput
                     )
                 }
@@ -191,6 +192,7 @@ private struct VoiceTabControls: View {
 
     @Binding var showPreview: Bool
     @Binding var showModelPicker: Bool
+    @Binding var showPersonaPicker: Bool
     @Binding var showChatInput: Bool
 
     var body: some View {
@@ -200,6 +202,7 @@ private struct VoiceTabControls: View {
             showSettings: .constant(false),
             showModelPicker: $showModelPicker,
             showPreview: $showPreview,
+            showPersonaPicker: $showPersonaPicker,
             showChatInput: $showChatInput
         )
     }
@@ -297,4 +300,3 @@ struct ChatInputBar: View {
         }
     }
 }
-

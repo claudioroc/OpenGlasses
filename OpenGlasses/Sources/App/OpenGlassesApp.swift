@@ -137,6 +137,7 @@ struct OpenGlassesApp: App {
         // Keychain. Must run before anything reads a secret (AppState, LLM, TTS…).
         Config.migrateSecretsToKeychainIfNeeded()
         Config.migrateWakePhraseIfNeeded()
+        Config.migrateAssistantDefaultsIfNeeded()
         // Defer Wearables SDK (Bluetooth permission) until after onboarding
         if Config.hasCompletedOnboarding {
             configureWearables()
@@ -2704,7 +2705,8 @@ class AppState: ObservableObject, AppStateProtocol {
                 print("⚡ Direct tool call: \(directCall.toolName) → \(result)")
 
                 if Config.conversationPersistenceEnabled {
-                    conversationStore.appendMessage(role: "assistant", content: result)
+                    conversationStore.appendMessage(role: "assistant", content: result,
+                                                    toolNames: [directCall.toolName])
                 }
 
                 startStopListener()
@@ -2723,6 +2725,9 @@ class AppState: ObservableObject, AppStateProtocol {
                 return
             }
         }
+
+        // A cancelled/failed prior turn must not leak its tool list into this one.
+        _ = nativeToolRouter.takeTurnToolNames()
 
         // Tier 2: Model selection (Plan BG P2). The pure `ModelRoutingPolicy` decides between the
         // on-device agent model, a temporary switch to the tier-recommended model, and keeping the
@@ -2840,10 +2845,17 @@ class AppState: ObservableObject, AppStateProtocol {
                     lastResponse = response
                     print("🤖 \(llmService.activeModelName): \(response)")
 
+                    let usedToolNames = nativeToolRouter.takeTurnToolNames()
+
                     // Save to conversation store
                     if Config.conversationPersistenceEnabled {
-                        conversationStore.appendMessage(role: "assistant", content: response)
+                        conversationStore.appendMessage(role: "assistant", content: response,
+                                                        toolNames: usedToolNames)
                     }
+
+                    // Keep voice and typed turns on the same memory-learning path.
+                    MemoryLoopService.shared.observeTurn(userText: query, assistantText: response,
+                                                         toolNames: usedToolNames)
                 },
                 speak: { [self] response in
                     // Start wake word listener during TTS so user can say "stop"
@@ -2852,9 +2864,11 @@ class AppState: ObservableObject, AppStateProtocol {
                     stopStopListener()
                 },
                 onCancelled: {
+                    _ = self.nativeToolRouter.takeTurnToolNames()
                     print("🛑 LLM turn cancelled")
                 },
                 onError: { [self] error in
+                    _ = nativeToolRouter.takeTurnToolNames()
                     errorMessage = "Failed to get response: \(error.localizedDescription)"
                     // BK P2c: when the cascade is exhausted, speak the real reason instead of the
                     // generic line (e.g. "the last one was rate-limited"), so the app stays honest
@@ -2912,6 +2926,8 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         isProcessing = true
+        // A cancelled/failed prior turn must not leak its tool list into this one.
+        _ = nativeToolRouter.takeTurnToolNames()
         didNarrateModelSwitchThisTurn = false   // BK P2c: fresh per-turn narration budget
         speechService.startThinkingSound()
 
@@ -2963,14 +2979,17 @@ class AppState: ObservableObject, AppStateProtocol {
                     lastResponse = response
                     streamingTurn = nil  // clear before persisting so the live bubble doesn't duplicate the saved message
 
+                    let usedToolNames = nativeToolRouter.takeTurnToolNames()
+
                     if Config.conversationPersistenceEnabled {
-                        conversationStore.appendMessage(role: "assistant", content: response)
+                        conversationStore.appendMessage(role: "assistant", content: response,
+                                                        toolNames: usedToolNames)
                     }
 
                     // Memory loop (Phase 3): spot a durable fact or a repeated multi-step request and
                     // offer to remember it (or silently save it in Agent Mode).
                     MemoryLoopService.shared.observeTurn(userText: query, assistantText: response,
-                                                         toolNames: nativeToolRouter.takeTurnToolNames())
+                                                         toolNames: usedToolNames)
                 },
                 speak: { [self] response in
                     // Speak the response (user can still say "stop")
@@ -2980,10 +2999,12 @@ class AppState: ObservableObject, AppStateProtocol {
                     stopStopListener()
                 },
                 onCancelled: { [self] in
+                    _ = nativeToolRouter.takeTurnToolNames()
                     streamingTurn = nil
                     print("🛑 Text turn cancelled")
                 },
                 onError: { [self] error in
+                    _ = nativeToolRouter.takeTurnToolNames()
                     streamingTurn = nil
                     errorMessage = "Failed to get response: \(error.localizedDescription)"
                     if speakResponse {

@@ -6,9 +6,9 @@ import Foundation
 /// if their deployment differs, a base URL) instead of hand-wiring every field like the generic
 /// Custom harness.
 ///
-/// Pure + headless-testable. The exact REST contract for each backend is verified on the live edge
-/// (these defaults are the documented starting point); a power user can still override any field via
-/// the Custom harness if their endpoint differs.
+/// Pure + headless-testable. These placeholder contracts are not verified upstream deployments;
+/// the optional base URL is only an override for users who operate a compatible endpoint. A power
+/// user can instead wire an explicitly verified contract through the Custom harness.
 enum AgentHarnessPreset {
 
     /// OpenAI Codex cloud agent. Token is sent as `Authorization: Bearer …`; a run is started by

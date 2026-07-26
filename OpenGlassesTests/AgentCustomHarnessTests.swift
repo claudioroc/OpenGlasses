@@ -186,6 +186,15 @@ final class AgentCustomHarnessTests: XCTestCase {
         XCTAssertNil(registry.active(defaultKind: .openclaw))
     }
 
+    func testRegistryDoesNotImplicitlyFallBackToPendingRemoteAdapters() {
+        let registry = AgentHarnessRegistry([
+            StubHarness(kind: .openclaw, configured: false),
+            StubHarness(kind: .claudeRemote, configured: true),
+            StubHarness(kind: .codexCloud, configured: true),
+        ])
+        XCTAssertNil(registry.active(defaultKind: .openclaw))
+    }
+
     // MARK: - Registry-backed dispatch + switch_harness tool
 
     func testSessionDispatchUsesRegistryActive() async {

@@ -28,7 +28,7 @@ struct AgentHarnessSettingsView: View {
             } header: {
                 Text("Default")
             } footer: {
-                Text("Which backend the “code_agent” voice tool dispatches to. OpenClaw uses your existing gateway connection; Custom uses the endpoint below.")
+                Text("This setting is only for the “code_agent” voice tool. It does not carry MCP traffic between the glasses and your M4. OpenClaw uses the phone gateway; Custom uses the endpoint below.")
             }
 
             Section {
@@ -44,7 +44,7 @@ struct AgentHarnessSettingsView: View {
             } header: {
                 Text("OpenAI Codex · Claude Code (remote)")
             } footer: {
-                Text("Paste a token to enable the backend — the endpoints are pre-filled (override the base URL only if your deployment differs). Tokens are stored in the Keychain. Live dispatch is verified against your endpoint.")
+                Text("These two upstream adapters are pending live contract verification. Their blank base-URL fields are optional deployment overrides, not missing configuration. Do not use them unless you operate a verified compatible endpoint. Tokens are stored in the Keychain.")
             }
 
             Section {

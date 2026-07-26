@@ -5,6 +5,10 @@
       {
         "appID": "B9L8ANZQZX.com.openglasses.app",
         "paths": ["*"]
+      },
+      {
+        "appID": "8M4N6TKXG7.com.openglasses.app",
+        "paths": ["*"]
       }
     ]
   }

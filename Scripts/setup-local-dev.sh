@@ -87,8 +87,33 @@ restore_from_commit() {
   echo "  Config/Info/Info.personal.plist"
 }
 
+setup_explicit_team() {
+  local team="$1"
+  local app_bundle="${2:-com.openglasses.app}"
+  local widget_bundle="${3:-${app_bundle}.GlassesActivityWidget}"
+  mkdir -p Config/Entitlements/Personal Config/Info
+
+  for f in Config/Entitlements/Personal/*.entitlements.example; do
+    [[ -f "$f" ]] || continue
+    local out="${f%.example}"
+    [[ -f "$out" ]] || cp "$f" "$out"
+  done
+  [[ -f Config/Info/Info.personal.plist ]] || cp OpenGlasses/Info.plist Config/Info/Info.personal.plist
+  write_project_local_yml "$team" "$app_bundle" "$widget_bundle"
+
+  echo "Configured explicit signing team ${team}:"
+  echo "  app: ${app_bundle}"
+  echo "  widget: ${widget_bundle}"
+}
+
 if [[ "${1:-}" == "--from-commit" ]]; then
   restore_from_commit "${2:-$DEFAULT_COMMIT}"
+elif [[ "${1:-}" == "--team" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    echo "Usage: $0 --team APPLE_TEAM_ID [APP_BUNDLE_ID] [WIDGET_BUNDLE_ID]" >&2
+    exit 2
+  fi
+  setup_explicit_team "$2" "${3:-com.openglasses.app}" "${4:-}"
 else
   if [[ ! -f project.local.yml ]]; then
     cp project.local.yml.example project.local.yml

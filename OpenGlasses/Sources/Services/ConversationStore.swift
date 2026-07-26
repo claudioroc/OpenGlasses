@@ -6,13 +6,17 @@ struct ConversationMessage: Codable, Identifiable {
     let role: String          // "user", "assistant", "system"
     let content: String
     let imageAttached: Bool
+    /// Tools used to produce this message. Optional so conversation files written by older
+    /// builds continue to decode without a migration.
+    let toolNames: [String]?
     let timestamp: Date
 
-    init(role: String, content: String, imageAttached: Bool = false) {
+    init(role: String, content: String, imageAttached: Bool = false, toolNames: [String] = []) {
         self.id = UUID().uuidString
         self.role = role
         self.content = content
         self.imageAttached = imageAttached
+        self.toolNames = toolNames.isEmpty ? nil : toolNames
         self.timestamp = Date()
     }
 }
@@ -163,9 +167,11 @@ class ConversationStore: ObservableObject {
     }
 
     /// Append a message to the active thread.
-    func appendMessage(role: String, content: String, imageAttached: Bool = false) {
+    func appendMessage(role: String, content: String, imageAttached: Bool = false,
+                       toolNames: [String] = []) {
         guard let idx = threads.firstIndex(where: { $0.id == activeThreadId }) else { return }
-        let msg = ConversationMessage(role: role, content: content, imageAttached: imageAttached)
+        let msg = ConversationMessage(role: role, content: content, imageAttached: imageAttached,
+                                      toolNames: toolNames)
         threads[idx].messages.append(msg)
         threads[idx].updatedAt = Date()
         save()
