@@ -106,10 +106,6 @@ struct ModelFormView: View {
         } else {
             // MARK: Cloud API key section
             Section {
-                if selectedProvider == .anthropic {
-                    claudeSignInRows
-                }
-
                 SecretInputField(placeholder: anthropicKeyPlaceholder, text: $apiKey)
                     .onChange(of: apiKey) { _, _ in resetModelList() }
 
@@ -166,7 +162,7 @@ struct ModelFormView: View {
                         }
                     }
                 }
-                .disabled((apiKey.isEmpty && selectedProvider != .custom && !anthropicOAuthReady) || isFetchingModels)
+                .disabled((apiKey.isEmpty && selectedProvider != .custom) || isFetchingModels)
 
                 if let error = fetchError {
                     Label(error, systemImage: "xmark.circle")
@@ -329,7 +325,7 @@ struct ModelFormView: View {
 
     private var providerHelpText: String {
         switch selectedProvider {
-        case .anthropic: return "Get your API key at console.anthropic.com"
+        case .anthropic: return "Use an API key from console.anthropic.com. A Claude.ai subscription does not authenticate Messages API requests."
         case .openai: return "Get your API key at platform.openai.com"
         case .gemini: return "Get your API key at aistudio.google.com"
         case .groq: return "Get your API key at console.groq.com"
@@ -354,7 +350,7 @@ struct ModelFormView: View {
     private var anthropicKeyPlaceholder: String {
         switch selectedProvider {
         case .custom: return "API Key (optional for local servers)"
-        case .anthropic: return claudeOAuth.isConnected ? "API Key (optional — account connected)" : "API Key"
+        case .anthropic: return "Anthropic API Key"
         default: return "API Key"
         }
     }

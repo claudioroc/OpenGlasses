@@ -235,7 +235,7 @@ enum ModelFetcher {
 
     private static func fetchAnthropic(apiKey: String) async -> [RemoteModel] {
         guard let url = URL(string: "https://api.anthropic.com/v1/models") else { return [] }
-        let credential = await AnthropicAuth.resolveCredential(apiKey: apiKey)
+        let credential = AnthropicAuth.resolveCredential(apiKey: apiKey)
         guard !credential.isEmpty else { return [] }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"

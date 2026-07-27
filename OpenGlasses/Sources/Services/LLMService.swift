@@ -853,7 +853,7 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                AnthropicAuth.apply(credential: await AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
+                AnthropicAuth.apply(credential: AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
                 request.timeoutInterval = 15
                 let body: [String: Any] = [
                     "model": modelConfig.model,
@@ -943,7 +943,7 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                AnthropicAuth.apply(credential: await AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
+                AnthropicAuth.apply(credential: AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
                 request.timeoutInterval = 20
                 let body: [String: Any] = [
                     "model": modelConfig.model,
@@ -1047,7 +1047,7 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                AnthropicAuth.apply(credential: await AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
+                AnthropicAuth.apply(credential: AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
                 request.timeoutInterval = 30
                 let body: [String: Any] = [
                     "model": modelConfig.model,
@@ -1146,7 +1146,7 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                AnthropicAuth.apply(credential: await AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
+                AnthropicAuth.apply(credential: AnthropicAuth.resolveCredential(apiKey: modelConfig.apiKey), to: &request)
                 request.timeoutInterval = 45
                 let body: [String: Any] = [
                     "model": modelConfig.model,
@@ -1277,10 +1277,10 @@ class LLMService: ObservableObject {
     // Internal (not private) so the BM P9 fixture tests can drive the full streamed tool loop
     // through a stubbed `streamingSession`.
     func sendAnthropic(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil) async throws -> String {
-        // An explicit API key wins; otherwise fall back to a connected Claude account (OAuth).
-        let apiKey = await AnthropicAuth.resolveCredential(apiKey: config.apiKey)
+        // Anthropic Messages API calls always use the key configured for this model.
+        let apiKey = AnthropicAuth.resolveCredential(apiKey: config.apiKey)
         guard !apiKey.isEmpty else {
-            throw LLMError.missingAPIKey("Anthropic API key not configured — add a key or sign in with Claude")
+            throw LLMError.missingAPIKey("Anthropic API key not configured — add a key in Settings")
         }
 
         // Add user message to history

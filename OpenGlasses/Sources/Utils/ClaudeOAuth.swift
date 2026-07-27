@@ -175,12 +175,10 @@ enum AnthropicAuth {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
     }
 
-    /// Resolve the credential for an Anthropic request: an explicit API key on the model config
-    /// wins; otherwise a connected Claude account's (refreshed) OAuth access token.
-    @MainActor
-    static func resolveCredential(apiKey: String) async -> String {
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return await ClaudeOAuthService.shared.validAccessToken() ?? ""
+    /// Anthropic Messages API credentials belong to the configured model. Do not silently borrow
+    /// a Claude.ai/Claude Code session: those credentials are not an app API key and make the UI
+    /// report a successful sign-in while requests fail later at the provider.
+    static func resolveCredential(apiKey: String) -> String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
