@@ -1,7 +1,8 @@
 import Foundation
 
-/// The execution skeleton of one LLM turn (Plan BG P2): send → post-process → cancellation check →
-/// accept → speak, with a `finish` stage that ALWAYS runs — success, error, or cancellation.
+/// The execution skeleton of one LLM turn (Plan BG P2): send → cancellation check → post-process →
+/// cancellation check → accept → cancellation check → speak, with a `finish` stage that ALWAYS runs
+/// — success, error, or cancellation.
 ///
 /// `handleTranscription`'s photo and normal turns both run this skeleton inside the tracked
 /// `currentLLMTask`; only the stage bodies differ, so they are injected as `@MainActor` closures
@@ -40,16 +41,26 @@ enum ConversationTurnRunner {
     static func run(_ deps: Deps) async {
         do {
             let raw = try await deps.send()
+            // `postProcess` can persist memory and inject prompt state, so a response cancelled
+            // while in flight must not reach it.
+            try Task.checkCancellation()
             let response = await deps.postProcess(raw)
-            // If the user barged in / stopped while the LLM was working, don't accept or speak
-            // the now-stale reply.
+            // Each injected async stage can yield the main actor. Re-check before every visible
+            // step so a barge-in cannot persist, mirror, or speak a stale response.
             try Task.checkCancellation()
             await deps.accept(response)
+            try Task.checkCancellation()
             await deps.speak(response)
         } catch is CancellationError {
             deps.onCancelled()
         } catch {
-            await deps.onError(error)
+            // URLSession/provider SDKs can surface their own error after the parent task was
+            // cancelled. The interruption wins: do not speak an error after a user barge-in.
+            if Task.isCancelled {
+                deps.onCancelled()
+            } else {
+                await deps.onError(error)
+            }
         }
         await deps.finish()
     }

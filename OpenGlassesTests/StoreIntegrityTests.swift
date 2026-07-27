@@ -267,6 +267,22 @@ final class StoreIntegrityTests: XCTestCase {
         XCTAssertEqual(reopened.threads.first?.messages.first?.content, "hello")
     }
 
+    func testConversationStoreReplayIncludesSummaryAndMessagesInOrder() {
+        let store = ConversationStore(directory: tempDir)
+        let thread = store.startThread(mode: "voice")
+        store.appendMessage(role: "user", content: "Where did we leave off?")
+        store.appendMessage(role: "assistant", content: "We were planning the trip.")
+        store.updateCompressedSummary("We chose Lisbon for October.", for: thread.id)
+
+        let replay = store.replayMessages(for: thread.id)
+        XCTAssertEqual(replay.map(\.role), ["user", "user", "assistant"])
+        XCTAssertEqual(replay.map(\.content), [
+            "[Prior conversation context]\nWe chose Lisbon for October.",
+            "Where did we leave off?",
+            "We were planning the trip.",
+        ])
+    }
+
     // MARK: - Teleprompter share inbox: drain must not outrun the save
 
     func testInboxPeekDoesNotConsume() {
