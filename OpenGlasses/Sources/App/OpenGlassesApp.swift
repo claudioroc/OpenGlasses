@@ -487,6 +487,14 @@ class AppState: ObservableObject, AppStateProtocol {
     let cameraService = CameraService()
     let videoRecorder = VideoRecordingService()
     let audioRecorder = AudioRecordingService()
+    let recordedSessionStore = RecordedSessionStore()
+    let recordingTranscriber = RecordingTranscriber()
+    lazy var sessionRecorder = SessionRecorderController(
+        audioRecorder: audioRecorder,
+        wakeWordService: wakeWordService,
+        store: recordedSessionStore,
+        transcriber: recordingTranscriber
+    )
     let meetingAssistant = MeetingAssistantService()
     let broadcastService = BroadcastService()
     let locationService = LocationService()

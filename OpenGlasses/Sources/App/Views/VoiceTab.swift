@@ -16,6 +16,8 @@ struct VoiceTab: View {
     @State private var showModelPicker = false
     @State private var showPersonaPicker = false
     @State private var showChatInput = false
+    @State private var showMeetingRecords = false
+    @State private var showRecordings = false
 
     private var session: GeminiLiveSessionManager { appState.geminiLiveSession }
     private var openAISession: OpenAIRealtimeSessionManager { appState.openAIRealtimeSession }
@@ -27,7 +29,7 @@ struct VoiceTab: View {
             Color(.systemBackground).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Quick controls (added 2026-07-24): mic / silent / smart-cam / live / persona
+                // Quick controls: mic / silent / smart-cam / live / persona / recording / records
                 HStack(spacing: 22) {
                     Button { appState.micMuted.toggle() } label: {
                         Image(systemName: appState.micMuted ? "mic.slash.fill" : "mic.fill")
@@ -60,6 +62,15 @@ struct VoiceTab: View {
                         Image(systemName: "theatermasks.fill")
                             .foregroundColor(appState.activePersona != nil ? .purple : .primary)
                     }
+                    MeetingRecordingControl(
+                        controller: appState.sessionRecorder,
+                        audioRecorder: appState.audioRecorder,
+                        openRecordings: { showRecordings = true }
+                    )
+                    Button { showMeetingRecords = true } label: {
+                        Image(systemName: "text.book.closed")
+                    }
+                    .accessibilityLabel("Meeting records")
                 }
                 .font(.title3)
                 .padding(.vertical, 8)
@@ -128,6 +139,15 @@ struct VoiceTab: View {
         .sheet(isPresented: $showPersonaPicker) {
             PersonaPickerSheet(appState: appState)
         }
+        .sheet(isPresented: $showMeetingRecords) {
+            MeetingRecordsSheet()
+        }
+        .sheet(isPresented: $showRecordings) {
+            RecordingsSheet(
+                store: appState.recordedSessionStore,
+                controller: appState.sessionRecorder
+            )
+        }
         .sheet(item: $appState.pendingShareItem) { item in
             ShareSheet(items: item.items)
         }
@@ -149,6 +169,64 @@ struct VoiceTab: View {
         .padding(.vertical, 5)
         .background(Capsule().fill(.red.opacity(0.3)))
         .accessibilityLabel("Recording: \(appState.videoRecorder.formattedDuration)")
+    }
+}
+
+private struct MeetingRecordingControl: View {
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject var controller: SessionRecorderController
+    @ObservedObject var audioRecorder: AudioRecordingService
+    let openRecordings: () -> Void
+
+    var body: some View {
+        Button {
+            Task {
+                if controller.isRecording {
+                    await controller.stop()
+                } else {
+                    do {
+                        try await controller.start()
+                    } catch {
+                        appState.errorMessage = error.localizedDescription
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: controller.isRecording ? "stop.circle.fill" : "record.circle")
+                if controller.isRecording {
+                    Text(audioRecorder.formattedDuration)
+                        .font(.system(.caption, design: .monospaced))
+                }
+            }
+            .foregroundStyle(controller.isRecording ? .red : .primary)
+        }
+        .buttonStyle(RecordingLongPressButtonStyle(longPressAction: openRecordings))
+        .accessibilityLabel("Record meeting")
+        .accessibilityValue(controller.isRecording ? "Recording \(audioRecorder.formattedDuration)" : "Stopped")
+        .accessibilityHint("Double-tap to start or stop. Long-press to open recordings.")
+    }
+}
+
+/// Keeps a long press from also triggering the recording button when the gesture ends.
+private struct RecordingLongPressButtonStyle: PrimitiveButtonStyle {
+    let longPressAction: () -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .gesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .exclusively(before: TapGesture())
+                    .onEnded { result in
+                        switch result {
+                        case .first:
+                            longPressAction()
+                        case .second:
+                            configuration.trigger()
+                        }
+                    }
+            )
     }
 }
 
@@ -335,4 +413,3 @@ struct ChatInputBar: View {
         }
     }
 }
-

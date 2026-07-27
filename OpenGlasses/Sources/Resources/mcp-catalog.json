@@ -11,9 +11,17 @@
         "hint": "Create a Long-Lived Access Token under your HA profile → Security."
       },
       "fields": [
-        { "key": "host", "label": "HA host / IP", "placeholder": "192.168.1.10" }
+        {
+          "key": "host",
+          "label": "HA host / IP",
+          "placeholder": "192.168.1.10"
+        }
       ],
-      "scopes": ["Control devices", "Read sensors", "Run scripts & scenes"],
+      "scopes": [
+        "Control devices",
+        "Read sensors",
+        "Run scripts & scenes"
+      ],
       "icon": "house.fill",
       "notes": "Your local Home Assistant instance. Discovered tools are screened by the egress + tool-poisoning screen before the AI can use them."
     },
@@ -27,9 +35,17 @@
         "hint": "Bearer token your self-hosted Slack MCP server expects (e.g. a bot token)."
       },
       "fields": [
-        { "key": "host", "label": "MCP server host / IP", "placeholder": "127.0.0.1" }
+        {
+          "key": "host",
+          "label": "MCP server host / IP",
+          "placeholder": "127.0.0.1"
+        }
       ],
-      "scopes": ["Read channels", "Post messages", "Search history"],
+      "scopes": [
+        "Read channels",
+        "Post messages",
+        "Search history"
+      ],
       "icon": "number.square.fill",
       "notes": "Point this at your own Slack MCP server. Outbound arguments are screened so tokens and PII don't leave the device."
     },
@@ -43,7 +59,11 @@
         "hint": "Notion uses OAuth. Sign-in automation is coming; for now paste an access token in the editor."
       },
       "fields": [],
-      "scopes": ["Read pages", "Create pages", "Search workspace"],
+      "scopes": [
+        "Read pages",
+        "Create pages",
+        "Search workspace"
+      ],
       "icon": "doc.text.fill",
       "notes": "Notion's hosted MCP endpoint. OAuth device-code sign-in is deferred (Plan V follow-up)."
     },
@@ -57,7 +77,11 @@
         "hint": "GitHub uses OAuth. Sign-in automation is coming; for now paste a personal access token in the editor."
       },
       "fields": [],
-      "scopes": ["Read repos", "Issues & PRs", "Search code"],
+      "scopes": [
+        "Read repos",
+        "Issues & PRs",
+        "Search code"
+      ],
       "icon": "chevron.left.forwardslash.chevron.right",
       "notes": "GitHub's hosted MCP endpoint. OAuth device-code sign-in is deferred (Plan V follow-up)."
     },
@@ -71,7 +95,11 @@
         "hint": "Linear uses OAuth over SSE. Both the OAuth flow and the live SSE stream are deferred (Plan V follow-up)."
       },
       "fields": [],
-      "scopes": ["Read issues", "Create issues", "Search projects"],
+      "scopes": [
+        "Read issues",
+        "Create issues",
+        "Search projects"
+      ],
       "icon": "list.bullet.rectangle.fill",
       "notes": "Linear's hosted MCP endpoint. Listed for completeness; live connection lands when SSE + OAuth ship."
     },
@@ -79,15 +107,41 @@
       "id": "m4-overseer",
       "label": "Home Overseer (M4)",
       "transport": "http",
+      "url_template": "https://mac-mini-m4.tailc3e020.ts.net:3001/mcp",
+      "auth": {
+        "kind": "bearer",
+        "hint": "Token from M4 Keychain: glasses-mcp-token"
+      },
+      "fields": [],
+      "scopes": [
+        "Home control",
+        "Media center",
+        "Property deals",
+        "Messages",
+        "Lifelog memory"
+      ],
+      "icon": "house.badge.wifi",
+      "notes": "Home infrastructure via Mac Mini M4. Controls Home Assistant, media center, RE pipeline, messages, and lifelog memory."
+    },
+    {
+      "id": "m4-overseer-cf",
+      "label": "Home Overseer (M4) — Cloudflare (backup)",
+      "transport": "http",
       "url_template": "https://m4-mcp.rochasilva.co.uk/mcp",
       "auth": {
         "kind": "bearer",
         "hint": "Token from M4 Keychain: glasses-mcp-token"
       },
       "fields": [],
-      "scopes": ["Home control", "Media center", "Property deals", "Messages", "Lifelog memory"],
+      "scopes": [
+        "Home control",
+        "Media center",
+        "Property deals",
+        "Messages",
+        "Lifelog memory"
+      ],
       "icon": "house.badge.wifi",
-      "notes": "Home infrastructure via Mac Mini M4. Controls Home Assistant, media center, RE pipeline, messages, and lifelog memory."
+      "notes": "Public Cloudflare fallback — use when Tailscale is off. Home infrastructure via Mac Mini M4. Controls Home Assistant, media center, RE pipeline, messages, and lifelog memory."
     }
   ]
 }

@@ -46,7 +46,7 @@ class AudioRecordingService: ObservableObject {
         guard !isRecording else { return }
 
         let tempDir = FileManager.default.temporaryDirectory
-        let fileName = "OG_Audio_\(Int(Date().timeIntervalSince1970)).m4a"
+        let fileName = Self.recordingFileName()
         let url = tempDir.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: url)
 
@@ -133,6 +133,12 @@ class AudioRecordingService: ObservableObject {
     }
 
     // MARK: - Private
+
+    /// A recording can be stopped and restarted within one second. Include a UUID so each
+    /// session owns a distinct audio file instead of colliding on a timestamp-only name.
+    static func recordingFileName(now: Date = Date(), id: UUID = UUID()) -> String {
+        "OG_Audio_\(Int(now.timeIntervalSince1970))_\(id.uuidString).m4a"
+    }
 
     private func collectCaptions() {
         guard let captions = ambientCaptionService else { return }

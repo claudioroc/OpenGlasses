@@ -598,6 +598,21 @@ struct SettingsView: View {
                 }
 
                 NavigationLink {
+                    MeetingRecordsView()
+                } label: {
+                    Label("Meeting Records", systemImage: "text.book.closed")
+                }
+
+                NavigationLink {
+                    RecordingsView(
+                        store: appState.recordedSessionStore,
+                        controller: appState.sessionRecorder
+                    )
+                } label: {
+                    Label("Recordings", systemImage: "waveform")
+                }
+
+                NavigationLink {
                     CaptureFlowAuthorView()
                 } label: {
                     Label("Author Capture-Flow", systemImage: "list.bullet.rectangle")
