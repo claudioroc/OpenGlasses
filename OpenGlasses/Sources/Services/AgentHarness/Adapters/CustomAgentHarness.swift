@@ -54,9 +54,8 @@ struct CustomAgentHarness: AgentHarness {
     }
 
     func status(_ run: AgentRun) async throws -> AgentRunStatus {
-        guard let request = config.statusRequest(runID: run.id) else { return .running }
-        let json = try await sendJSON(request)
-        return AgentRunStatus.parse(JSONPath.string(at: config.statusPath, in: json)) ?? .running
+        guard let json = try await statusJSON(run) else { return .running }
+        return parseStatus(json)
     }
 
     func cancel(_ run: AgentRun) async throws {
@@ -73,14 +72,28 @@ struct CustomAgentHarness: AgentHarness {
             let task = Task {
                 continuation.yield(.started(run))
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 4_000_000_000)
-                    guard !Task.isCancelled else { break }
-                    let status = (try? await self.status(run)) ?? .running
+                    guard let json = try? await self.statusJSON(run) else {
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        continue
+                    }
+
+                    let status = self.parseStatus(json)
                     if status.isTerminal {
-                        continuation.yield(status == .failed ? .error("The agent run failed.")
-                                                             : .completed(AgentRunResult()))
+                        if status == .failed {
+                            let message = JSONPath.string(at: self.config.errorPath, in: json)
+                                ?? "The agent run failed."
+                            continuation.yield(.error(message))
+                        } else {
+                            if let text = JSONPath.string(at: self.config.finalTextPath, in: json),
+                               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                continuation.yield(.assistantText(text))
+                            }
+                            continuation.yield(.completed(AgentRunResult()))
+                        }
                         break
                     }
+
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
                 }
                 continuation.finish()
             }
@@ -89,6 +102,15 @@ struct CustomAgentHarness: AgentHarness {
     }
 
     // MARK: - HTTP
+
+    private func statusJSON(_ run: AgentRun) async throws -> [String: Any]? {
+        guard let request = config.statusRequest(runID: run.id) else { return nil }
+        return try await sendJSON(request)
+    }
+
+    private func parseStatus(_ json: [String: Any]) -> AgentRunStatus {
+        AgentRunStatus.parse(JSONPath.string(at: config.statusPath, in: json)) ?? .running
+    }
 
     private func sendJSON(_ request: URLRequest) async throws -> [String: Any] {
         let (data, response) = try await session.data(for: request)

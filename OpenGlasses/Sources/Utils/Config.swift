@@ -125,21 +125,13 @@ struct Config {
         UserDefaults.standard.set(true, forKey: key)
     }
 
-    /// One-time repair for installs that persisted two unsafe historical defaults:
-    /// `claudeRemote` as the voice code-agent harness and Wine Sommelier as the
-    /// general assistant prompt. The remote Claude adapter is not a transport to
-    /// the user's M4; OpenClaw is the only verified phone-side code-agent path.
+    /// One-time repair for installs that persisted the old Wine Sommelier default prompt.
     ///
     /// The migration is deliberately narrow and versioned. It does not overwrite
     /// later choices after the first repaired launch.
     static func migrateAssistantDefaultsIfNeeded() {
         let migrationKey = "assistantDefaults202607Migrated"
         guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
-
-        if UserDefaults.standard.string(forKey: "defaultAgentHarness") == AgentHarnessKind.claudeRemote.rawValue {
-            setDefaultAgentHarness(.openclaw)
-            NSLog("[Config] Migrated default code-agent harness from claudeRemote to openclaw")
-        }
 
         if activePresetId == "preset-wine-sommelier" {
             setActivePresetId("preset-default")
@@ -2534,7 +2526,7 @@ struct Config {
         }
     }
 
-    // MARK: - Codex / Claude Code remote harnesses (Plan N, Phase 3)
+    // MARK: - Codex / Claude Code bridge harnesses (Plan N, Phase 3)
 
     /// OpenAI Codex cloud API token (Keychain — secret). Empty ⇒ harness not configured.
     static var codexAgentToken: String {
@@ -2552,7 +2544,7 @@ struct Config {
         UserDefaults.standard.set(url, forKey: "codexAgentBaseURL")
     }
 
-    /// Claude Code remote API token (Keychain — secret). Empty ⇒ harness not configured.
+    /// Claude Code bridge token (Keychain — secret). Empty ⇒ harness not configured.
     static var claudeRemoteToken: String {
         KeychainService.string(for: "claudeRemoteToken") ?? ""
     }
@@ -2560,7 +2552,7 @@ struct Config {
         if token.isEmpty { _ = KeychainService.delete("claudeRemoteToken") }
         else { _ = KeychainService.setString(token, for: "claudeRemoteToken") }
     }
-    /// Optional base-URL override for the Claude Code endpoint (non-secret). Blank ⇒ preset default.
+    /// Optional base-URL override for the Claude bridge endpoint (non-secret). Blank ⇒ not configured.
     static var claudeRemoteBaseURL: String {
         UserDefaults.standard.string(forKey: "claudeRemoteBaseURL") ?? ""
     }

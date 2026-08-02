@@ -1,0 +1,20 @@
+OpenGlasses rebuild on MBA (Xcode) — prepared on M4 2026-08-01
+
+1. Fix Remote Login if needed, then from M4:
+   rsync -a --delete --exclude .build --exclude .git/objects \
+     ~/repos/OpenGlasses/ claudiorocha@192.168.10.166:~/repos/OpenGlasses/
+   OR on MBA: git pull / copy the dirty branch local/rayban-2nd-unit
+
+2. On MBA:
+   cd ~/repos/OpenGlasses
+   ./Scripts/generate-xcodeproj.sh
+   open OpenGlasses.xcodeproj
+   # Confirm MARKETING_VERSION 2026.7 / CURRENT_PROJECT_VERSION 311
+   # Confirm mcp-catalog m4-overseer URL = https://bus.rochasilva.co.uk/mcp
+   # Product → Run on iPhone (⌘R)
+
+3. In app: Settings → MCP → Home Overseer (M4)
+   Bearer = glasses-mcp-token (M4 Keychain)
+   Connect → expect ~21 tools
+
+4. Verify UA in glasses-router log: OpenGlasses/311

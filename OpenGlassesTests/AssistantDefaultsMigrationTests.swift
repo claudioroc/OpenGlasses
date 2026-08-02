@@ -37,14 +37,14 @@ final class AssistantDefaultsMigrationTests: XCTestCase {
         )
     }
 
-    func testRepairsPersistedClaudeRemoteAndSommelierDefaults() {
+    func testRepairsPersistedSommelierDefaultsWithoutChangingHarnessChoice() {
         Config.setDefaultAgentHarness(.claudeRemote)
         Config.setActivePresetId("preset-wine-sommelier")
         Config.setSavedPersonas([legacyPersona()])
 
         Config.migrateAssistantDefaultsIfNeeded()
 
-        XCTAssertEqual(Config.defaultAgentHarness, .openclaw)
+        XCTAssertEqual(Config.defaultAgentHarness, .claudeRemote)
         XCTAssertEqual(Config.activePresetId, "preset-default")
         XCTAssertEqual(Config.savedPersonas.first?.name, "Claude")
         XCTAssertEqual(Config.savedPersonas.first?.presetId, "preset-default")

@@ -31,7 +31,7 @@ class AudioRecordingService: ObservableObject {
     private var recordingStartDate: Date?
 
     private(set) var recordingTranscript = ""
-    private var lastCaptionCount = 0
+    private var captionCursor = CaptionCursor()
 
     private static let audioConsumerId = "audio_recording"
 
@@ -70,7 +70,11 @@ class AudioRecordingService: ObservableObject {
         self.outputURL = url
         self.audioStartTime = nil
         self.recordingTranscript = ""
-        self.lastCaptionCount = 0
+        // Start from the present: captions already buffered predate this recording.
+        self.captionCursor = CaptionCursor()
+        if let captions = ambientCaptionService {
+            _ = self.captionCursor.take(newestFirst: captions.captionHistory)
+        }
         self.recordingStartDate = Date()
         self.recordingDuration = 0
         self.isRecording = true
@@ -136,14 +140,11 @@ class AudioRecordingService: ObservableObject {
 
     private func collectCaptions() {
         guard let captions = ambientCaptionService else { return }
-        let history = captions.captionHistory
-        guard history.count > lastCaptionCount else { return }
-        let newEntries = history[lastCaptionCount...]
+        let newEntries = captionCursor.take(newestFirst: captions.captionHistory)
         let newText = newEntries.map(\.text).joined(separator: " ")
         if !newText.isEmpty {
             recordingTranscript += (recordingTranscript.isEmpty ? "" : " ") + newText
         }
-        lastCaptionCount = history.count
     }
 
     private func saveToDocuments(_ src: URL) -> URL? {

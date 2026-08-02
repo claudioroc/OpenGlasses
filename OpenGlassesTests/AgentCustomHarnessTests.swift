@@ -152,6 +152,23 @@ final class AgentCustomHarnessTests: XCTestCase {
         XCTAssertEqual(status, .completed)
     }
 
+    func testEventsEmitAssistantTextBeforeCompletion() async throws {
+        MockURLProtocol.reset()
+        MockURLProtocol.responseBody = Data(#"{"id":"run-9","status":"completed","finalText":"I fixed the flow."}"#.utf8)
+        let harness = CustomAgentHarness(config: config(), session: MockURLProtocol.session())
+
+        let run = try await harness.start(prompt: "p", project: nil)
+        var events: [AgentEvent] = []
+        for await event in harness.events(for: run) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events.count, 3)
+        XCTAssertEqual(events[0], .started(run))
+        XCTAssertEqual(events[1], .assistantText("I fixed the flow."))
+        XCTAssertEqual(events[2], .completed(AgentRunResult()))
+    }
+
     // MARK: - AgentRunStatus.parse (shared)
 
     func testStatusParseTolerantSpellings() {

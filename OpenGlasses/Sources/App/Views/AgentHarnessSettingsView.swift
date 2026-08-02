@@ -8,7 +8,7 @@ struct AgentHarnessSettingsView: View {
     @State private var defaultKind: AgentHarnessKind = Config.defaultAgentHarness
     @State private var config: CustomHarnessConfig = Config.customAgentHarness ?? CustomHarnessConfig()
     @State private var saved = false
-    // Codex / Claude Code remote (Plan N Phase 3)
+    // Codex / Claude Code bridge (Plan N Phase 3)
     @State private var codexToken: String = Config.codexAgentToken
     @State private var codexBaseURL: String = Config.codexAgentBaseURL
     @State private var claudeToken: String = Config.claudeRemoteToken
@@ -33,18 +33,18 @@ struct AgentHarnessSettingsView: View {
 
             Section {
                 SecretInputField(placeholder: "OpenAI Codex API token", text: $codexToken)
-                urlField("Base URL (optional override)", text: $codexBaseURL)
-                SecretInputField(placeholder: "Claude Code API token", text: $claudeToken)
-                urlField("Base URL (optional override)", text: $claudeBaseURL)
+                urlField("Codex base URL (optional override)", text: $codexBaseURL)
+                SecretInputField(placeholder: "Claude bridge token", text: $claudeToken)
+                urlField("Claude bridge URL", text: $claudeBaseURL)
                 Button {
                     saveRemotePresets()
                 } label: {
-                    Label("Save Codex / Claude Code", systemImage: "square.and.arrow.down")
+                    Label("Save Codex / Claude bridge", systemImage: "square.and.arrow.down")
                 }
             } header: {
-                Text("OpenAI Codex · Claude Code (remote)")
+                Text("OpenAI Codex · Claude Code bridge")
             } footer: {
-                Text("These two upstream adapters are pending live contract verification. Their blank base-URL fields are optional deployment overrides, not missing configuration. Do not use them unless you operate a verified compatible endpoint. Tokens are stored in the Keychain.")
+                Text("Codex uses the cloud API. Claude Code uses a bridge you run on the MBA and point at the bridge URL above. Tokens are stored in the Keychain.")
             }
 
             Section {

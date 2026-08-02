@@ -1,9 +1,9 @@
 import Foundation
 
 /// Pre-filled `CustomHarnessConfig`s for the first-class remote-agent backends (Plan N, Phase 3):
-/// **OpenAI Codex (cloud)** and **Claude Code (remote)**. Each preset encodes that backend's auth
-/// scheme, request field names, and response field mapping, so the user only supplies a token (and,
-/// if their deployment differs, a base URL) instead of hand-wiring every field like the generic
+/// **OpenAI Codex (cloud)** and **Claude Code (bridge)**. Each preset encodes that backend's auth
+/// scheme, request field names, and response field mapping, so the user only supplies a token and,
+/// if their deployment differs, a base URL instead of hand-wiring every field like the generic
 /// Custom harness.
 ///
 /// Pure + headless-testable. These placeholder contracts are not verified upstream deployments;
@@ -29,20 +29,24 @@ enum AgentHarnessPreset {
         return config
     }
 
-    /// Claude Code remote (routines/web). Token is sent as `x-api-key`; same start/poll shape.
+    /// Claude Code bridge. Token is sent as `Authorization: Bearer …`; same start/poll shape.
     static func claudeRemote(token: String, baseURL: String? = nil) -> CustomHarnessConfig {
-        let root = normalizedRoot(baseURL, default: "https://api.anthropic.com/v1/code")
+        let root = normalizedRoot(baseURL, default: "")
         var config = CustomHarnessConfig()
         config.name = AgentHarnessKind.claudeRemote.displayName
-        config.startURL = "\(root)/sessions"
-        config.statusURLTemplate = "\(root)/sessions/{id}"
-        config.cancelURLTemplate = "\(root)/sessions/{id}/cancel"
-        config.authHeader = "x-api-key"
-        config.authValue = token
+        if !root.isEmpty {
+            config.startURL = "\(root)/sessions"
+            config.statusURLTemplate = "\(root)/sessions/{id}"
+            config.cancelURLTemplate = "\(root)/sessions/{id}/cancel"
+        }
+        config.authHeader = "Authorization"
+        config.authValue = token.isEmpty ? "" : "Bearer \(token)"
         config.promptField = "prompt"
         config.projectField = "project"
         config.idPath = "id"
         config.statusPath = "status"
+        config.finalTextPath = "finalText"
+        config.errorPath = "error"
         return config
     }
 

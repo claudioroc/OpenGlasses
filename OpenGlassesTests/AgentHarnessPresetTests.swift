@@ -24,13 +24,23 @@ final class AgentHarnessPresetTests: XCTestCase {
         XCTAssertEqual(AgentHarnessPreset.codexCloud(token: "", baseURL: nil).authValue, "")
     }
 
-    // MARK: - Claude Code preset
+    // MARK: - Claude Code bridge preset
 
-    func testClaudePresetUsesXApiKey() {
+    func testClaudePresetUsesBearerTokenAndBridgeUrls() {
+        let cfg = AgentHarnessPreset.claudeRemote(token: "key123", baseURL: "https://mba.local:8898/v1/claude/")
+        XCTAssertEqual(cfg.authHeader, "Authorization")
+        XCTAssertEqual(cfg.authValue, "Bearer key123")
+        XCTAssertEqual(cfg.startURL, "https://mba.local:8898/v1/claude/sessions")
+        XCTAssertEqual(cfg.statusURLTemplate, "https://mba.local:8898/v1/claude/sessions/{id}")
+        XCTAssertEqual(cfg.cancelURLTemplate, "https://mba.local:8898/v1/claude/sessions/{id}/cancel")
+    }
+
+    func testClaudePresetWithoutBridgeURLIsNotConfigured() {
         let cfg = AgentHarnessPreset.claudeRemote(token: "key123", baseURL: nil)
-        XCTAssertEqual(cfg.authHeader, "x-api-key")
-        XCTAssertEqual(cfg.authValue, "key123")
-        XCTAssertEqual(cfg.startURL, "https://api.anthropic.com/v1/code/sessions")
+        XCTAssertEqual(cfg.authHeader, "Authorization")
+        XCTAssertEqual(cfg.authValue, "Bearer key123")
+        XCTAssertEqual(cfg.startURL, "")
+        XCTAssertFalse(cfg.isConfigured)
     }
 
     func testConfigForKind() {

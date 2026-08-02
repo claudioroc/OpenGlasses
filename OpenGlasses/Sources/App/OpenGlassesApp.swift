@@ -1724,7 +1724,8 @@ class AppState: ObservableObject, AppStateProtocol {
     func handleBargeIn(_ bargeInText: String) {
         print("⚡ Barge-in: '\(bargeInText)' — stopping TTS and processing")
         speechService.stopSpeaking()
-        currentLLMTask?.cancel()
+        let interruptedTask = currentLLMTask
+        interruptedTask?.cancel()
         currentLLMTask = nil
         isProcessing = false
         speechService.stopThinkingSound()
@@ -1734,10 +1735,13 @@ class AppState: ObservableObject, AppStateProtocol {
             return
         }
 
-        // Feed the barge-in text directly into the conversation pipeline
-        // handleTranscription handles conversation store, LLM call, etc.
-        Task {
-            await handleTranscription(bargeInText)
+        // Let the cancelled turn finish its cleanup (including a temporary model restore) before
+        // starting the replacement. Otherwise its finish closure can race the new turn and reset
+        // isProcessing / recording while the new model call is in flight.
+        Task { @MainActor [weak self] in
+            await interruptedTask?.value
+            guard let self, self.inConversation, self.listeningEnabled, !self.isProcessing else { return }
+            await self.handleTranscription(bargeInText)
         }
     }
 
@@ -1760,6 +1764,8 @@ class AppState: ObservableObject, AppStateProtocol {
             NSLog("[Listening] Enabled")
         } else {
             // Stop everything: wake word, transcription, TTS, Live Activity
+            currentLLMTask?.cancel()
+            currentLLMTask = nil
             wakeWordService.stopListening()
             transcriptionService.stopRecording()
             speechService.stopSpeaking()
@@ -1767,6 +1773,9 @@ class AppState: ObservableObject, AppStateProtocol {
             // Release any audio pause held by an in-flight conversation so Music/Podcasts resume.
             Task { await wakeWordService.forceResumeOtherAudio() }
             isListening = false
+            isProcessing = false
+            inConversation = false
+            activePersona = nil
             NSLog("[Listening] Disabled")
         }
     }
@@ -2255,17 +2264,20 @@ class AppState: ObservableObject, AppStateProtocol {
         })
         let custom = CustomAgentHarness(config: Config.customAgentHarness ?? CustomHarnessConfig())
 
-        // Codex / Claude Code remote (Plan N Phase 3) — preset-backed HTTP harnesses, ready when a token is set.
+        // Codex / Claude Code bridge (Plan N Phase 3) — preset-backed HTTP harnesses, ready when
+        // token and base URL are both set.
+        let codexConfig = AgentHarnessPreset.codexCloud(token: Config.codexAgentToken, baseURL: Config.codexAgentBaseURL)
         let codex = CustomAgentHarness(
             kind: .codexCloud,
-            config: AgentHarnessPreset.codexCloud(token: Config.codexAgentToken, baseURL: Config.codexAgentBaseURL),
+            config: codexConfig,
             displayName: AgentHarnessKind.codexCloud.displayName,
-            isConfigured: !Config.codexAgentToken.isEmpty)
+            isConfigured: !Config.codexAgentToken.isEmpty && codexConfig.isConfigured)
+        let claudeConfig = AgentHarnessPreset.claudeRemote(token: Config.claudeRemoteToken, baseURL: Config.claudeRemoteBaseURL)
         let claudeCode = CustomAgentHarness(
             kind: .claudeRemote,
-            config: AgentHarnessPreset.claudeRemote(token: Config.claudeRemoteToken, baseURL: Config.claudeRemoteBaseURL),
+            config: claudeConfig,
             displayName: AgentHarnessKind.claudeRemote.displayName,
-            isConfigured: !Config.claudeRemoteToken.isEmpty)
+            isConfigured: !Config.claudeRemoteToken.isEmpty && claudeConfig.isConfigured)
 
         return AgentHarnessRegistry([openClaw, custom, codex, claudeCode])
     }
@@ -2348,8 +2360,10 @@ class AppState: ObservableObject, AppStateProtocol {
     /// - Parameter ensureEngine: run the audio-engine keepalive first — needed after TTS playback,
     ///   which may have interrupted the engine.
     private func resumeListeningOrReturnToWakeWord(ensureEngine: Bool = false) async {
+        guard listeningEnabled else { return }
         if inConversation {
             if ensureEngine { try? await wakeWordService.ensureAudioEngineRunning() }
+            guard listeningEnabled, inConversation else { return }
             isListening = true
             transcriptionService.startRecording()
         } else {
@@ -3468,6 +3482,7 @@ class AppState: ObservableObject, AppStateProtocol {
         if Config.conversationPersistenceEnabled && conversationStore.activeThreadId != nil {
             conversationStore.endThread()
         }
+        llmService.clearHistory()
 
         // Disconnect the glasses (triggers isConnected didSet cleanup too)
         glassesService.disconnect()
@@ -3502,6 +3517,12 @@ class AppState: ObservableObject, AppStateProtocol {
         // End active conversation thread
         if Config.conversationPersistenceEnabled && conversationStore.activeThreadId != nil {
             conversationStore.endThread()
+        }
+        // A finished hands-free conversation must not bleed into the next wake-word session.
+        llmService.clearHistory()
+        if !listeningEnabled {
+            print("🔇 Listening disabled — wake word listener stays off")
+            return
         }
         // In silent mode, don't restart wake word UNLESS we just finished an
         // active conversation — the user was just talking, so they expect the

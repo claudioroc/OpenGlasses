@@ -168,6 +168,11 @@ class LLMService: ObservableObject {
     /// Context window is managed by token-aware compaction, not a fixed turn count.
     private var conversationHistory: [[String: Any]] = []
 
+    /// Thread whose persisted messages currently back `conversationHistory`. This lets the first
+    /// voice/Siri turn after a relaunch hydrate the restored active thread, while a newly selected
+    /// thread replaces — never leaks into — the prior context.
+    private var conversationHistoryThreadId: String?
+
     /// Maximum estimated tokens before compacting the context window.
     /// When exceeded, older messages are summarized and compressed rather than dropped blindly.
     private let maxEstimatedTokens = 80_000
@@ -431,6 +436,8 @@ class LLMService: ObservableObject {
         isProcessing = true
         defer { isProcessing = false }
 
+        synchronizeConversationHistoryWithActiveThreadIfNeeded()
+
         // Compress context window if conversation history has grown too large
         // Use LLM summarization in agentic mode, heuristic fallback otherwise
         if Config.agentModeEnabled {
@@ -527,6 +534,10 @@ class LLMService: ObservableObject {
     /// one candidate. Exhaustion throws the *last real* error (not a generic line) so the caller can
     /// speak the true reason.
     func sendMessageCascading(_ text: String, locationContext: String? = nil, imageData: Data? = nil, memoryContext: String? = nil, agentContext: String? = nil, playbookContext: String? = nil, nowPlayingContext: String? = nil, shortcutsContext: String? = nil, promptSections: ConversationClassifier.PromptSections? = nil, backgrounded: Bool = false, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil, onModelSwitch: ((_ from: ModelConfig?, _ to: ModelConfig?, _ failure: ModelFallbackChain.FailureClass) async -> Void)? = nil) async throws -> String {
+
+        // The cascade snapshots history before its first provider attempt. Hydrate first so a
+        // fallback after app relaunch rewinds to the restored thread, not an empty history.
+        synchronizeConversationHistoryWithActiveThreadIfNeeded()
 
         func send() async throws -> String {
             try await sendMessage(text, locationContext: locationContext, imageData: imageData, memoryContext: memoryContext, agentContext: agentContext, playbookContext: playbookContext, nowPlayingContext: nowPlayingContext, shortcutsContext: shortcutsContext, promptSections: promptSections, onToken: onToken, onStreamReset: onStreamReset)
@@ -640,6 +651,7 @@ class LLMService: ObservableObject {
     /// Clear conversation history (e.g. when starting fresh or switching providers)
     func clearHistory() {
         conversationHistory.removeAll()
+        conversationHistoryThreadId = nil
     }
 
     /// Load a persisted conversation thread into the in-memory history.
@@ -651,10 +663,24 @@ class LLMService: ObservableObject {
         for msg in messages {
             conversationHistory.append(["role": msg.role, "content": msg.content])
         }
+        conversationHistoryThreadId = conversationStore?.activeThreadId
         // Compact immediately if the restored history is too large for the context window
         compressContextWindowIfNeeded()
         NSLog("[LLM] Loaded %d messages from conversation history (%d after compaction)",
               messages.count, conversationHistory.count)
+    }
+
+    /// Rehydrate context when the persisted active thread changes, including after an app relaunch.
+    /// Keeping this at the LLM boundary covers voice, typed Chat, and Siri uniformly.
+    private func synchronizeConversationHistoryWithActiveThreadIfNeeded() {
+        guard Config.conversationPersistenceEnabled,
+              let store = conversationStore,
+              let threadId = store.activeThreadId,
+              threadId != conversationHistoryThreadId
+        else { return }
+
+        loadConversationHistory(store.replayMessages(for: threadId))
+        NSLog("[LLM] Restored context for active thread %@", threadId)
     }
 
     /// Compress the context window when estimated token count exceeds the budget.

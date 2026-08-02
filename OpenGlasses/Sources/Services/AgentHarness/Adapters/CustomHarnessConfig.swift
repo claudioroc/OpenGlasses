@@ -24,6 +24,10 @@ struct CustomHarnessConfig: Codable, Equatable {
     /// Dot-paths into the responses (e.g. "data.run.id"). See `JSONPath`.
     var idPath: String = "id"
     var statusPath: String = "status"
+    /// Optional dot-path for the final assistant text returned by the bridge.
+    var finalTextPath: String = "finalText"
+    /// Optional dot-path for a terminal error message returned by the bridge.
+    var errorPath: String = "error"
 
     /// Minimum viable config: a parseable, transport-secure start URL. The auth token rides every
     /// request, so `http://` is refused except to loopback (a local bridge in development) — BM P5.

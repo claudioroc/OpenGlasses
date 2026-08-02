@@ -5,7 +5,7 @@ import Foundation
 enum AgentHarnessKind: String, CaseIterable, Codable, Identifiable {
     case openclaw       // OpenClaw gateway — the real, phone-only path today
     case codexCloud     // OpenAI Codex cloud agent — adapter pending trigger verification
-    case claudeRemote   // Claude Code via routines/web — adapter pending verification
+    case claudeRemote   // Claude Code bridge running on the MBA
     case custom         // user-supplied URL + token + field mapping
 
     var id: String { rawValue }
@@ -14,7 +14,7 @@ enum AgentHarnessKind: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .openclaw:     return "OpenClaw"
         case .codexCloud:   return "OpenAI Codex (cloud)"
-        case .claudeRemote: return "Claude Code (remote)"
+        case .claudeRemote: return "Claude Code (bridge)"
         case .custom:       return "Custom endpoint"
         }
     }
