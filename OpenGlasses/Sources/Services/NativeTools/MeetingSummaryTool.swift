@@ -41,11 +41,13 @@ struct MeetingSummaryTool: NativeTool {
         let mode = (args["mode"] as? String)?.lowercased() ?? "full"
         let shouldSave = args["save"] as? Bool ?? true
 
-        // Build transcript from caption history (most recent first, so reverse)
+        // Build transcript from caption history (most recent first, so reverse).
+        // Prefer speaker-labeled lines so general + meeting summaries attribute who said what.
+        let registry = await MainActor.run { service.speakerRegistry }
         let entries = history.reversed()
         let transcript = entries.map { entry in
             let time = formatTime(entry.timestamp)
-            return "[\(time)] \(entry.text)"
+            return "[\(time)] \(entry.labeledText(registry: registry))"
         }.joined(separator: "\n")
 
         let duration = calculateDuration(entries: Array(entries))

@@ -21,6 +21,15 @@ class AmbientCaptionService: ObservableObject {
         /// Diarized speaker id (`nil` = unlabeled / single-speaker path). Resolve to a display
         /// name via `speakerRegistry`.
         var speaker: Int? = nil
+
+        /// Human-readable line for transcripts, meeting notes, and LLM context.
+        func labeledText(registry: SpeakerRegistry) -> String {
+            guard let speaker else { return text }
+            if let name = registry.name(for: speaker), !name.isEmpty {
+                return "\(name): \(text)"
+            }
+            return "Speaker \(speaker + 1): \(text)"
+        }
     }
 
     private var recognizer: SFSpeechRecognizer?
@@ -32,7 +41,14 @@ class AmbientCaptionService: ObservableObject {
     private var diarizer: DeepgramSTTService?
 
     /// Maps diarization speaker ids to names/colours for the caption chips.
-    let speakerRegistry = SpeakerRegistry()
+    /// `onNameSet` pushes named speakers to the glasses-router → cortex.
+    let speakerRegistry: SpeakerRegistry = {
+        let reg = SpeakerRegistry()
+        reg.onNameSet = { id, name in
+            CortexSpeakerSync.push(name: name, speakerId: id)
+        }
+        return reg
+    }()
 
     /// Presence-suspended (Plan W v2): captions stay user-`isActive` but the recognition session is
     /// torn down while the user is *away* (disconnected/backgrounded), auto-resuming on return. Never
@@ -205,8 +221,16 @@ class AmbientCaptionService: ObservableObject {
         let diarizer = DeepgramSTTService()
         diarizer.onSegment = { [weak self] segment in
             guard let self, self.isActive else { return }
-            self.currentCaption = segment.text
-            self.glassesDisplay?.showText(segment.text)
+            // Live HUD line includes speaker when known so general mode (not only meetings) shows who is talking.
+            let liveLabel: String = {
+                guard let sp = segment.speaker else { return segment.text }
+                if let name = self.speakerRegistry.name(for: sp), !name.isEmpty {
+                    return "\(name): \(segment.text)"
+                }
+                return "S\(sp + 1): \(segment.text)"
+            }()
+            self.currentCaption = liveLabel
+            self.glassesDisplay?.showText(liveLabel)
             self.resetSilenceTimer()
             if segment.isFinal {
                 self.finalizeCaption(segment.text, speaker: segment.speaker)
@@ -214,10 +238,26 @@ class AmbientCaptionService: ObservableObject {
         }
         self.diarizer = diarizer
         diarizer.start()
+        print("🎙️ Ambient captions: Deepgram diarization ON (speakers labeled for all modes)")
 
         wakeWordService?.addAudioBufferConsumer(id: "ambient_captions") { [weak self] buffer in
             Task { @MainActor in self?.diarizer?.sendAudio(buffer) }
         }
+    }
+
+    /// Newest-first history as labeled transcript lines for LLM / summaries (general + meeting).
+    func labeledTranscriptLines(limit: Int = 40) -> [String] {
+        captionHistory.prefix(limit).reversed().map { $0.labeledText(registry: speakerRegistry) }
+    }
+
+    /// Compact block injected into the system prompt so any persona can answer "who said what".
+    func llmRoomContext(limit: Int = 30) -> String? {
+        let lines = labeledTranscriptLines(limit: limit)
+        guard !lines.isEmpty else { return nil }
+        let header = Config.isDiarizationConfigured
+            ? "RECENT ROOM AUDIO (speaker-labeled when known — use names for attribution):"
+            : "RECENT ROOM AUDIO (single stream, no speaker labels):"
+        return header + "\n" + lines.joined(separator: "\n")
     }
 
     private func stopRecognitionSession() {

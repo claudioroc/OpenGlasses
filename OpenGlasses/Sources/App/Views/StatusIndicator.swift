@@ -270,11 +270,12 @@ struct QuickActionsGrid: View {
 
     private var allActions: [QuickAction] { Config.quickActions }
 
-    /// Show top 4 or all, based on user preference.
+    /// Home grid: top 4, or up to 8 (two rows) when "Show All" is on — never dump 12+ chips
+    /// that push the hero bar off-screen on compact iPhones.
     private var actions: [QuickAction] {
         let all = allActions
         if Config.showAllQuickActions {
-            return all
+            return Array(all.prefix(8))
         }
         return Array(all.prefix(4))
     }
@@ -294,15 +295,15 @@ struct QuickActionsGrid: View {
 
     var body: some View {
         if appState.isConnected && appState.currentMode == .direct && !allActions.isEmpty {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
-            LazyVGrid(columns: columns, spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(actions) { action in
                     quickActionButton(action)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
             .opacity(visible ? 1 : 0)
             .allowsHitTesting(visible)
             .animation(.easeInOut(duration: 0.2), value: visible)
@@ -321,25 +322,26 @@ struct QuickActionsGrid: View {
                 executingActionId = nil
             }
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 3) {
                 ZStack {
                     if isExecuting {
                         ProgressView()
-                            .scaleEffect(0.7)
+                            .scaleEffect(0.65)
                     } else {
                         Image(systemName: action.icon)
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(Color(.label))
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .glassEffect(in: .rect(cornerRadius: 12))
+                .frame(height: 36)
+                .glassEffect(in: .rect(cornerRadius: 10))
 
                 Text(action.label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
         }
         .buttonStyle(.plain)

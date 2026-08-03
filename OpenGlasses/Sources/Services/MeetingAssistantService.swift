@@ -33,6 +33,9 @@ class MeetingAssistantService: ObservableObject {
     /// Prevents concurrent LLM calls.
     private var isAnalysing = false
 
+    /// Held for speaker-label resolution on caption lines.
+    private weak var captions: AmbientCaptionService?
+
     // MARK: - Public API
 
     /// Start the assistant.
@@ -43,6 +46,7 @@ class MeetingAssistantService: ObservableObject {
         guard !isActive else { return }
         isActive = true
         self.llm = llm
+        self.captions = captionService
         fullTranscript = []
         bufferText = ""
         // Start from the present: anything already in the buffer predates this meeting.
@@ -90,9 +94,11 @@ class MeetingAssistantService: ObservableObject {
         let newEntries = cursor.take(newestFirst: history)
         guard !newEntries.isEmpty else { return }
 
+        let registry = captions?.speakerRegistry
         for entry in newEntries {
-            fullTranscript.append(entry.text)
-            bufferText += (bufferText.isEmpty ? "" : " ") + entry.text
+            let line = registry.map { entry.labeledText(registry: $0) } ?? entry.text
+            fullTranscript.append(line)
+            bufferText += (bufferText.isEmpty ? "" : " ") + line
         }
 
         // Trigger early if the buffer already has ≥ 100 words.
@@ -120,12 +126,14 @@ class MeetingAssistantService: ObservableObject {
 
         let transcript = fullTranscript.joined(separator: "\n")
         let prompt = """
-            You are a live meeting assistant listening to a conversation. Here is the transcript so far:
+            You are a live meeting assistant listening to a conversation. Lines may be speaker-labeled \
+            (e.g. "Alice: …" / "Speaker 2: …"). Attribute decisions and action items to those people.
 
+            Transcript so far:
             \(transcript)
 
             Provide:
-            1. A 2-3 sentence running summary of the key points discussed
+            1. A 2-3 sentence running summary of the key points discussed (name speakers when labeled)
             2. 2-3 smart follow-up questions the listener could ask right now
 
             Format your response EXACTLY as:

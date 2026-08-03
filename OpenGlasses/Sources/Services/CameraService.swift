@@ -302,21 +302,43 @@ class CameraService: ObservableObject {
 
     /// Capture a photo from the glasses camera. Returns JPEG data.
     /// Reuses the persistent session — starts it if needed, does NOT stop it after capture.
-    func capturePhoto() async throws -> Data {
-        // Glasses are usable for the camera only once fully registered (state 3). When
-        // they're offline / not connected / not registered, capture from the iPhone back
-        // camera instead so the vision tools keep working without glasses.
-        if Wearables.shared.registrationState.rawValue < 3 {
-            NSLog("[Camera] Glasses not registered (state < 3) — capturing from iPhone back camera")
+    /// Tries glasses first (with a short registration wait). Falls back to latest glasses
+    /// frame, then iPhone back camera — same reliable path that worked before the strict
+    /// no-fallback change broke photo/describe/plant buttons.
+    func capturePhoto(allowPhoneFallback: Bool = true) async throws -> Data {
+        var reg = Wearables.shared.registrationState.rawValue
+        if reg < 3 {
+            NSLog("[Camera] Registration state %d — waiting up to 8s for glasses camera (need 3)", reg)
+            reg = await waitForRegistration(minState: 3, timeoutSeconds: 8)
+        }
+
+        if reg >= 3 {
+            do {
+                return try await captureFromGlasses()
+            } catch {
+                if let frame = latestFrameAsJPEG() {
+                    NSLog("[Camera] Glasses capture failed (%@) — using latest glasses frame (%d bytes)",
+                          error.localizedDescription, frame.count)
+                    return frame
+                }
+                NSLog("[Camera] Glasses capture failed (%@) — falling back to iPhone back camera",
+                      error.localizedDescription)
+                if allowPhoneFallback {
+                    return try await phoneSource.capturePhoto()
+                }
+                throw error
+            }
+        }
+
+        if let frame = latestFrameAsJPEG() {
+            NSLog("[Camera] Not registered (state %d) — using latest glasses frame", reg)
+            return frame
+        }
+        if allowPhoneFallback {
+            NSLog("[Camera] Glasses not registered (state %d) — capturing from iPhone back camera", reg)
             return try await phoneSource.capturePhoto()
         }
-        do {
-            return try await captureFromGlasses()
-        } catch {
-            NSLog("[Camera] Glasses capture failed (%@) — falling back to iPhone back camera",
-                  error.localizedDescription)
-            return try await phoneSource.capturePhoto()
-        }
+        throw CameraError.sdkNotRegistered
     }
 
     /// Capture a photo from the glasses camera. Returns JPEG data.

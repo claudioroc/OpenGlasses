@@ -54,13 +54,7 @@ struct QuickAction: Codable, Identifiable {
     var urlScheme: String?
 
     static let travelTemplates: [QuickAction] = [
-        QuickAction(
-            id: "travel-translate-sign-menu",
-            label: "Translate Sign",
-            icon: "text.viewfinder",
-            type: .photoThenPrompt,
-            promptText: "Read all visible text in this image. First provide exact original text, then translate to English. If helpful, use the translate tool to improve accuracy. Keep response concise for glasses."
-        ),
+        // Translate Sign lives in `smartDial` (always on the main row).
         QuickAction(
             id: "travel-ask-local-phrase",
             label: "Local Phrase",
@@ -82,9 +76,27 @@ struct QuickAction: Codable, Identifiable {
         promptText: "Start a Field Assist session on my default vault. Briefly confirm you're ready and what you can help me troubleshoot."
     )
 
-    static let defaults: [QuickAction] = [
+    /// Core speed-dial buttons (vision + specialist modes Claudio uses daily).
+    /// Kept separate from travel/HA extras so migrations can re-inject them after a bundle reset.
+    static let smartDial: [QuickAction] = [
         QuickAction(id: "describe", label: "Describe", icon: "eye", type: .photoThenPrompt,
-                    promptText: "Describe what you see in this image in detail."),
+                    promptText: "Describe what you see in this image in detail. Lead with the most useful facts for someone wearing glasses."),
+        QuickAction(id: "travel-translate-sign-menu", label: "Translate Sign", icon: "text.viewfinder", type: .photoThenPrompt,
+                    promptText: "Read all visible text in this image. First provide exact original text, then translate to English. If helpful, use the translate tool to improve accuracy. Keep response concise for glasses."),
+        QuickAction(id: "identify-plant", label: "Plant ID", icon: "leaf", type: .photoThenPrompt,
+                    promptText: "Identify this plant. Include common name, scientific name, whether it's edible or toxic, and any interesting facts. Keep it brief for spoken TTS."),
+        QuickAction(id: "wine-sommelier", label: "Sommelier", icon: "wineglass", type: .photoThenPrompt,
+                    promptText: "You are a wine sommelier. Read any wine label or menu in this image: producer, region, vintage, grape. Give tasting notes, food pairings, and a value judgment. Keep it to 3–5 spoken sentences — no markdown."),
+        // Special-cased in AppState.executeQuickAction → activates Meeting Assistant persona + audio rec.
+        QuickAction(id: "meeting-record", label: "Meeting Mode", icon: "person.3", type: .prompt,
+                    promptText: "Activate meeting mode"),
+        QuickAction(id: "record-audio", label: "Rec Audio", icon: "waveform", type: .prompt,
+                    promptText: "Start audio-only recording with live transcription now. Confirm when recording is on. Stay quiet unless I ask to stop recording or for a summary."),
+        QuickAction(id: "record-video", label: "Rec Video", icon: "record.circle", type: .prompt,
+                    promptText: "Start video recording from the glasses camera now. Confirm when recording is on, and tell me how to stop it."),
+    ]
+
+    static let defaults: [QuickAction] = smartDial + [
         QuickAction(id: "calendar", label: "Event", icon: "calendar", type: .photoThenPrompt,
                     promptText: "Extract any event details from this image (dates, times, locations, names) and create a calendar entry summary."),
         QuickAction(id: "task", label: "Task", icon: "checklist", type: .photoThenPrompt,

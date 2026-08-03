@@ -29,15 +29,28 @@ struct DiarizationSettingsView: View {
                     .disabled(Config.hipaaMode)
                     .onChange(of: enabled) { _, newValue in
                         Config.diarizationEnabled = newValue
+                        // AppState picks this up if injected; also post for any listener.
+                        NotificationCenter.default.post(name: .diarizationConfigChanged, object: nil)
                     }
             } footer: {
-                Text("Labels each caption and meeting line with the speaker. When off, transcription works exactly as today (a single, unlabeled stream).")
+                Text("General use — not just Meeting Mode. Ambient captions, recordings, summaries, and the assistant’s room context all get speaker labels (Alice / Speaker 2). When off, transcription is a single unlabeled stream.")
+            }
+
+            Section {
+                Toggle("Auto-start captions when glasses connect", isOn: Binding(
+                    get: { Config.diarizationAutoStartCaptions },
+                    set: { Config.diarizationAutoStartCaptions = $0 }
+                ))
+                .disabled(!enabled || Config.hipaaMode)
+            } footer: {
+                Text("When diarization is on, start listening to the room as soon as the glasses connect so every mode can hear who is speaking.")
             }
 
             Section {
                 SecretInputField(placeholder: "Deepgram API Key", text: $keyInput)
                     .onChange(of: keyInput) { _, newValue in
                         Config.setDeepgramAPIKey(newValue.trimmingCharacters(in: .whitespacesAndNewlines))
+                        NotificationCenter.default.post(name: .diarizationConfigChanged, object: nil)
                     }
                 if keyInput.isEmpty {
                     Link(destination: URL(string: "https://console.deepgram.com/")!) {

@@ -17,9 +17,23 @@ extension Config {
     }
 
     /// User opt-in for cloud diarization. Off by default (cloud egress of raw audio).
+    /// When on + keyed, applies to **all** ambient listening — not only Meeting Mode
+    /// (captions, recordings, summaries, and LLM room context).
     static var diarizationEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "diarizationEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "diarizationEnabled") }
+    }
+
+    /// When diarization is configured, auto-start ambient captions on glasses connect
+    /// so general mode always hears the room with speaker labels (no extra toggle).
+    static var diarizationAutoStartCaptions: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "diarizationAutoStartCaptions") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "diarizationAutoStartCaptions")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "diarizationAutoStartCaptions") }
     }
 
     /// Deepgram model used for diarization. `nova-3` has the strongest diarization.

@@ -172,6 +172,78 @@ struct Config {
         UserDefaults.standard.set(true, forKey: migrationKey)
     }
 
+    /// One-time (or re-runnable on fresh free-tier bundle): install the specialist modes
+    /// Claudio expects on the speed dial — Nature / Sommelier / Meeting — and ensure the
+    /// matching quick-action buttons sit in the top row. Safe to re-run: only adds missing
+    /// personas/actions; does not delete custom ones.
+    static func migrateSmartModesIfNeeded() {
+        // v4: Meeting Mode is conversational (~20–30 turns); refresh factory meeting prompt.
+        let migrationKey = "smartModes20260803v5CodeMigrated"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        // Personas (wake-word modes) — not auto-installed by default upstream.
+        let wantedPersonaIds = [
+            "mode-nature-guide",
+            "mode-wine-sommelier",
+            "mode-meeting-assistant",
+            "mode-code-assistant",
+        ]
+        let templates = builtInPersonaTemplates()
+        for id in wantedPersonaIds {
+            if let template = templates.first(where: { $0.id == id }) {
+                installPersonaMode(template)
+                NSLog("[Config] Auto-installed persona mode %@", template.name)
+            }
+        }
+
+        // Built-in mode prompts are seeded into UserDefaults once; refresh Meeting (and other
+        // stock mode presets) from code so conversational prompt updates ship on launch.
+        refreshBuiltInModePresetsFromFactory()
+
+        // Speed dial: inject smart buttons + put them first; keep any user extras after.
+        var actions: [QuickAction]
+        if let data = UserDefaults.standard.data(forKey: "quickActions"),
+           let saved = try? JSONDecoder().decode([QuickAction].self, from: data),
+           !saved.isEmpty {
+            actions = saved
+        } else {
+            actions = QuickAction.defaults
+        }
+        actions = mergeSmartDialQuickActions(into: actions)
+        actions = prioritizeSmartDial(actions)
+        setQuickActions(actions)
+        setShowAllQuickActions(true)
+        NSLog("[Config] Smart dial restored (%d actions, showAll=true)", actions.count)
+
+        UserDefaults.standard.set(true, forKey: migrationKey)
+    }
+
+    /// Overwrite stock mode presets (museum, meeting, sommelier, …) with the current
+    /// `modePresets()` definitions. Custom non-built-in presets are left alone.
+    static func refreshBuiltInModePresetsFromFactory() {
+        let factory = modePresets()
+        guard !factory.isEmpty else { return }
+        var presets = savedPresets
+        var changed = false
+        for fresh in factory {
+            if let idx = presets.firstIndex(where: { $0.id == fresh.id }) {
+                if presets[idx].prompt != fresh.prompt
+                    || presets[idx].name != fresh.name
+                    || presets[idx].cameraBehavior != fresh.cameraBehavior {
+                    presets[idx] = fresh
+                    changed = true
+                }
+            } else {
+                presets.append(fresh)
+                changed = true
+            }
+        }
+        if changed {
+            setSavedPresets(presets)
+            NSLog("[Config] Refreshed %d built-in mode presets from factory", factory.count)
+        }
+    }
+
     /// The primary wake word phrase (user-configurable)
     static var wakePhrase: String {
         if let phrase = UserDefaults.standard.string(forKey: "wakePhrase"), !phrase.isEmpty {
@@ -834,20 +906,43 @@ struct Config {
             You are a meeting assistant on smart glasses. Responses are spoken via TTS.
 
             YOUR ROLE:
-            - Take notes and track key points, decisions, and action items during conversations.
+            - You are a conversational partner for this meeting, not a mute recorder.
+            - Keep a running mental model of the meeting across many turns (aim for the last 20–30 exchanges plus any earlier summary).
+            - Take notes and track key points, decisions, and action items.
             - When asked "what did we decide?", summarize decisions from the current session.
             - Track action items with owners: "Sarah will handle the Q3 report by Friday."
             - Provide meeting summaries when asked: key topics, decisions made, next steps.
-            - Help prepare: "What should I bring up?" based on previous conversation context.
+            - Answer follow-ups, clarify points, draft phrasing, challenge weak logic, and help the user prepare what to say next.
+            - Use the meeting summary tool to save notes when asked.
+
+            CONVERSATION:
+            - The user will talk with you for many turns during and after the meeting — stay in meeting context.
+            - Remember what they already asked and what you already answered; do not restart from zero each turn.
+            - If the user switches topics, still retain meeting facts unless they say "new meeting" or "clear notes".
+            - Prefer short spoken answers (2–5 sentences). For full recaps, structure: topics → decisions → actions.
 
             INTERACTION STYLE:
-            - Be concise and structured in summaries — who, what, when.
-            - Only speak when spoken to during meetings — don't interrupt.
-            - Prioritize action items and decisions over general discussion.
-            - Use the meeting summary tool to save notes when asked.
-            - Keep responses to 2-4 sentences unless giving a full summary.
+            - Only speak when the user addresses you — never interrupt other people in the room.
+            - Be direct and useful, not formal theatre.
             - Never use markdown or formatting — this is spoken aloud.
             """, isBuiltIn: true, icon: "person.3", cameraBehavior: nil),
+
+            PromptPreset(id: "preset-code-assistant", name: "Code", prompt: """
+            You are a hands-free coding pair-programmer on Claudio's Ray-Ban OpenGlasses. Responses are spoken via TTS (Portuguese or English — match the user).
+
+            YOUR ROLE:
+            - Help Claudio design, debug, and ship code by voice while he wears the glasses.
+            - Prefer short spoken answers (2–5 sentences). For longer plans, give a tight outline then wait for "go" / "continua".
+            - Use the code_agent tool when he wants a real change applied on a machine (start/status/cancel/confirm).
+            - Ask which repo/project only if it matters; otherwise assume the active context.
+            - For risky actions (push, delete, migrate, production), summarize the plan and wait for explicit confirm.
+            - You may look at the glasses camera when he shows a screen, error, or whiteboard.
+
+            STYLE:
+            - Direct, technical, no fluff. No markdown when speaking.
+            - Claudio's commands may be in Portuguese or English — answer in the same language.
+            - Never run destructive actions without confirmation.
+            """, isBuiltIn: true, icon: "chevron.left.forwardslash.chevron.right", cameraBehavior: "smart"),
 
             PromptPreset(id: "preset-language-tutor", name: "Language Tutor", prompt: """
             You are a patient, encouraging language tutor on smart glasses. Responses are spoken via TTS.
@@ -1169,6 +1264,10 @@ struct Config {
                     alternativeWakePhrases: ["meeting mode", "hey notes"],
                     modelId: "", presetId: "preset-meeting-assistant", enabled: true,
                     icon: "person.3", isBuiltIn: true),
+            Persona(id: "mode-code-assistant", name: "Code", wakePhrase: "hey code",
+                    alternativeWakePhrases: ["code mode", "hey coding", "coding mode", "modo code"],
+                    modelId: "", presetId: "preset-code-assistant", enabled: true,
+                    icon: "chevron.left.forwardslash.chevron.right", isBuiltIn: true),
             Persona(id: "mode-language-tutor", name: "Language Tutor", wakePhrase: "hey tutor",
                     alternativeWakePhrases: ["tutor mode", "hey teacher"],
                     modelId: "", presetId: "preset-language-tutor", enabled: true,
@@ -1496,8 +1595,9 @@ struct Config {
         if let data = UserDefaults.standard.data(forKey: "quickActions"),
            let actions = try? JSONDecoder().decode([QuickAction].self, from: data),
            !actions.isEmpty {
-            let merged = mergeTravelQuickActions(into: actions)
-            if merged.count != actions.count {
+            var merged = mergeTravelQuickActions(into: actions)
+            merged = mergeSmartDialQuickActions(into: merged)
+            if merged.map(\.id) != actions.map(\.id) {
                 setQuickActions(merged)
             }
             base = merged
@@ -1530,8 +1630,40 @@ struct Config {
         return merged
     }
 
+    /// Ensure Describe / Plant ID / Sommelier / Meeting exist (fresh free-tier installs lose them).
+    /// Stock dial ids are refreshed from the factory definition so label/prompt fixes ship on launch.
+    private static func mergeSmartDialQuickActions(into actions: [QuickAction]) -> [QuickAction] {
+        var merged = actions
+        for template in QuickAction.smartDial {
+            if let idx = merged.firstIndex(where: { $0.id == template.id }) {
+                merged[idx] = template
+            } else {
+                merged.append(template)
+            }
+        }
+        return merged
+    }
+
+    /// Put smart-dial ids first (stable order), preserve relative order of everything else.
+    private static func prioritizeSmartDial(_ actions: [QuickAction]) -> [QuickAction] {
+        let priority = QuickAction.smartDial.map(\.id)
+        var byId = Dictionary(uniqueKeysWithValues: actions.map { ($0.id, $0) })
+        var ordered: [QuickAction] = []
+        for id in priority {
+            if let action = byId.removeValue(forKey: id) {
+                ordered.append(action)
+            }
+        }
+        // Remainder in original order
+        for action in actions where byId[action.id] != nil {
+            ordered.append(action)
+            byId.removeValue(forKey: action.id)
+        }
+        return ordered
+    }
+
     /// Whether to show all quick actions on the Voice tab, or only the top 4.
-    @UserDefaultsBacked("showAllQuickActions", default: false) static var showAllQuickActions: Bool
+    @UserDefaultsBacked("showAllQuickActions", default: true) static var showAllQuickActions: Bool
 
     static func setShowAllQuickActions(_ show: Bool) { showAllQuickActions = show }
 

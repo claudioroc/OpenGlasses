@@ -15,6 +15,10 @@ final class SpeakerRegistry {
     private let storageKey: String
     private var names: [Int: String]
 
+    /// Optional side-effect when a non-empty name is assigned (e.g. push to cortex via glasses-router).
+    /// Left `nil` in unit tests so the registry stays pure.
+    var onNameSet: ((Int, String) -> Void)?
+
     init(defaults: UserDefaults = .standard, storageKey: String = "diarizationSpeakerNames") {
         self.defaults = defaults
         self.storageKey = storageKey
@@ -41,14 +45,17 @@ final class SpeakerRegistry {
     }
 
     /// Assign (or clear, with `nil`/empty) the name for `id`, and persist.
+    /// When a non-empty name is set, also fires `onNameSet` (cortex sync).
     func setName(_ name: String?, for id: Int) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, !trimmed.isEmpty {
             names[id] = trimmed
+            persist()
+            onNameSet?(id, trimmed)
         } else {
             names.removeValue(forKey: id)
+            persist()
         }
-        persist()
     }
 
     // MARK: - Display

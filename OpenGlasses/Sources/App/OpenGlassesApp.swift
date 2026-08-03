@@ -10,6 +10,8 @@ import MediaPlayer
 
 extension Notification.Name {
     static let onboardingCompleted = Notification.Name("onboardingCompleted")
+    /// Posted when Diarization settings change so ambient captions reconfigure / auto-start.
+    static let diarizationConfigChanged = Notification.Name("diarizationConfigChanged")
 }
 
 private func processWearablesCallbackURL(_ url: URL, source: String) {
@@ -138,6 +140,7 @@ struct OpenGlassesApp: App {
         Config.migrateSecretsToKeychainIfNeeded()
         Config.migrateWakePhraseIfNeeded()
         Config.migrateAssistantDefaultsIfNeeded()
+        Config.migrateSmartModesIfNeeded()
         // Defer Wearables SDK (Bluetooth permission) until after onboarding
         if Config.hasCompletedOnboarding {
             configureWearables()
@@ -227,6 +230,8 @@ struct OpenGlassesApp: App {
                                 await appState.captureAndAnalyzePhoto()
                             case "describe":
                                 await appState.capturePhotoAndSend(prompt: "Describe what you see in detail.")
+                            case "code", "coding":
+                                await appState.activateCodeMode()
                             default:
                                 break
                             }
@@ -710,6 +715,13 @@ class AppState: ObservableObject, AppStateProtocol {
         // Wire Tier 1 services
         ambientCaptions.wakeWordService = wakeWordService
         ambientCaptions.glassesDisplay = glassesDisplay
+        NotificationCenter.default.addObserver(
+            forName: .diarizationConfigChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.onDiarizationConfigChanged() }
+        }
         // Toggling HIPAA mid-session must tear down any live cloud diarization at once (Plan BM
         // P0): reconfigure ambient captions onto the on-device path the moment the flag flips.
         hipaaService.onModeChanged = { [weak ambientCaptions] in
@@ -1453,6 +1465,9 @@ class AppState: ObservableObject, AppStateProtocol {
                             self.agentNotificationQueue.onGlassesReconnected()
                         }
                     }
+                    if wasDisconnected {
+                        self.maybeAutoStartDiarizedCaptions()
+                    }
                 } else if self.isConnected {
                     // Glasses powered off or Bluetooth disconnected
                     self.isConnected = false
@@ -1483,6 +1498,8 @@ class AppState: ObservableObject, AppStateProtocol {
                             try? await self.cameraService.ensurePermission()
                         }
                     }
+                    // General diarization: auto-start ambient captions so every mode hears speakers.
+                    self.maybeAutoStartDiarizedCaptions()
                 }
             }
         }
@@ -1856,19 +1873,21 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Capture a photo and send it to the LLM with a custom prompt.
     func capturePhotoAndSend(prompt: String) async {
         guard isConnected else {
-            // No glasses — fall back to the phone camera (live preview to aim + frame).
+            // No glasses link at all — only then use the explicit phone-camera sheet.
             presentPhoneCamera(prompt: prompt, userLog: "[Phone photo] \(prompt)")
             return
         }
         isProcessing = true
         speechService.startThinkingSound()
         do {
+            // Connected → glasses only (no silent iPhone camera). CameraService waits for
+            // registration and prefers the last glasses frame over phone fallback.
             let photoData = try await cameraService.capturePhoto()
             if currentMode == .direct {
                 cameraService.restoreAudioForWakeWord()
             }
             cameraService.saveToPhotoLibrary(photoData)
-            print("📸 Photo + prompt: \(prompt)")
+            print("📸 Glasses photo + prompt: \(prompt)")
 
             let rawResponse = try await llmService.sendMessage(
                 prompt,
@@ -1897,7 +1916,12 @@ class AppState: ObservableObject, AppStateProtocol {
             }
             isProcessing = false
             speechService.stopThinkingSound()
-            errorMessage = "Photo failed: \(error.localizedDescription)"
+            // Speak a clear glasses-camera error instead of silently opening the phone.
+            let reason = error.localizedDescription
+            errorMessage = "Glasses camera failed: \(reason)"
+            await speechService.speak(
+                "I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again."
+            )
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
         }
@@ -1920,6 +1944,11 @@ class AppState: ObservableObject, AppStateProtocol {
     func executeQuickAction(_ action: QuickAction) async {
         switch action.type {
         case .prompt:
+            // Dedicated Meeting Mode — not a chat prompt: switch persona + start audio capture.
+            if action.id == "meeting-record" {
+                await activateMeetingMode()
+                return
+            }
             guard let text = action.promptText, !text.isEmpty else { return }
             speechService.startThinkingSound()
             do {
@@ -2014,7 +2043,11 @@ class AppState: ObservableObject, AppStateProtocol {
             }
             isProcessing = false
             speechService.stopThinkingSound()
-            errorMessage = "Photo failed: \(error.localizedDescription)"
+            let reason = error.localizedDescription
+            errorMessage = "Glasses camera failed: \(reason)"
+            await speechService.speak(
+                "I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again."
+            )
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
         }
@@ -2142,6 +2175,177 @@ class AppState: ObservableObject, AppStateProtocol {
             } catch {
                 errorMessage = "Recording failed: \(error.localizedDescription)"
             }
+        }
+        // Nested ObservableObject — force bar buttons (Mute/Video/Audio) to refresh.
+        objectWillChange.send()
+    }
+
+    /// Toggle audio-only meeting recording (transcription + meeting assistant).
+    func toggleAudioRecording() async {
+        if audioRecorder.isRecording {
+            if let url = await audioRecorder.stopRecording() {
+                pendingShareItem = ShareItem(items: [url])
+            }
+        } else {
+            do {
+                try audioRecorder.startRecording()
+            } catch {
+                errorMessage = "Audio recording failed: \(error.localizedDescription)"
+            }
+        }
+        objectWillChange.send()
+    }
+
+    /// Location + recent room audio (speaker-labeled when diarization is on) for the system prompt.
+    /// Used in general conversation so any persona can answer "who said what", not only Meeting Mode.
+    func enrichedLocationContext() -> String? {
+        let loc = locationService.locationContext
+        let room = ambientCaptions.llmRoomContext()
+        switch (loc, room) {
+        case (nil, nil): return nil
+        case (let l?, nil): return l
+        case (nil, let r?): return r
+        case (let l?, let r?): return l + "\n\n" + r
+        }
+    }
+
+    /// Room audio only (when location section is off but we still want speaker context).
+    func ambientRoomContextOnly() -> String? {
+        ambientCaptions.llmRoomContext()
+    }
+
+    /// When diarization is configured, start ambient captions automatically so general mode
+    /// always labels speakers without requiring Meeting Mode.
+    func maybeAutoStartDiarizedCaptions() {
+        guard Config.isDiarizationConfigured, Config.diarizationAutoStartCaptions else { return }
+        guard isConnected else { return }
+        guard !ambientCaptions.isActive else {
+            ambientCaptions.reconfigureForModeChange()
+            return
+        }
+        ambientCaptions.start()
+        NSLog("[Diarization] Auto-started ambient captions (general speaker labeling)")
+    }
+
+    /// Full Meeting Mode: install/activate Meeting Assistant persona, apply its prompt,
+    /// start audio+transcript recording, and confirm by voice. Same path as "hey meeting".
+    @MainActor
+    func activateMeetingMode() async {
+        let modeId = "mode-meeting-assistant"
+        if !Config.isPersonaModeInstalled(modeId),
+           let template = Config.builtInPersonaTemplates().first(where: { $0.id == modeId }) {
+            Config.installPersonaMode(template)
+        }
+        guard let persona = Config.savedPersonas.first(where: { $0.id == modeId }) else {
+            errorMessage = "Meeting mode not available"
+            await speechService.speak("Meeting mode is not available.")
+            return
+        }
+
+        // Always pull the latest conversational Meeting prompt from code (UserDefaults can be stale).
+        Config.refreshBuiltInModePresetsFromFactory()
+
+        activePersona = persona
+        if !persona.modelId.isEmpty {
+            Config.setActiveModelId(persona.modelId)
+        }
+        Config.setActivePresetId(persona.presetId.isEmpty ? "preset-meeting-assistant" : persona.presetId)
+        llmService.refreshActiveModel()
+        // Fresh meeting thread, but multi-turn history stays open for ~20–30 exchanges
+        // (LLMService has no fixed turn cap — token budget holds a full meeting chat).
+        llmService.clearHistory()
+        if Config.conversationPersistenceEnabled {
+            conversationStore.startThread(mode: currentMode.rawValue, personaId: persona.id)
+        }
+        // Seed context so follow-ups know this is a long-running meeting conversation.
+        llmService.injectSystemMessage(
+            """
+            [Meeting mode started. You will converse with the user across many turns about this \
+            meeting — keep notes, decisions, action items, and prior answers in mind for at least \
+            the next 20–30 exchanges. Only speak when the user addresses you.]
+            """
+        )
+
+        // Ensure ambient captions (diarized when configured) run for the room transcript.
+        if !ambientCaptions.isActive {
+            ambientCaptions.start()
+        } else {
+            ambientCaptions.reconfigureForModeChange()
+        }
+
+        if !audioRecorder.isRecording {
+            do {
+                try audioRecorder.startRecording()
+                objectWillChange.send()
+            } catch {
+                errorMessage = "Audio recording failed: \(error.localizedDescription)"
+            }
+        }
+
+        let diarNote = Config.isDiarizationConfigured
+            ? " Speakers are labeled — tap chips to name people."
+            : " Tip: enable Diarization in Settings for who-said-what."
+        let msg = audioRecorder.isRecording
+            ? "Meeting mode on. I'm recording and I can talk with you for the whole meeting.\(diarNote)"
+            : "Meeting mode on. Recording failed — check the mic, then tap Audio.\(diarNote)"
+        lastResponse = msg
+        await speechService.speak(msg)
+        print("🎭 Meeting mode activated (persona=\(persona.name), recording=\(audioRecorder.isRecording), multi-turn, diarize=\(Config.isDiarizationConfigured))")
+    }
+
+
+    @MainActor
+    func activateCodeMode() async {
+        let modeId = "mode-code-assistant"
+        if !Config.isPersonaModeInstalled(modeId),
+           let template = Config.builtInPersonaTemplates().first(where: { $0.id == modeId }) {
+            Config.installPersonaMode(template)
+        }
+        guard let persona = Config.savedPersonas.first(where: { $0.id == modeId }) else {
+            errorMessage = "Code mode not available"
+            await speechService.speak("Code mode is not available.")
+            return
+        }
+
+        Config.refreshBuiltInModePresetsFromFactory()
+
+        activePersona = persona
+        if !persona.modelId.isEmpty {
+            Config.setActiveModelId(persona.modelId)
+        }
+        Config.setActivePresetId(persona.presetId.isEmpty ? "preset-code-assistant" : persona.presetId)
+        llmService.refreshActiveModel()
+        llmService.clearHistory()
+        if Config.conversationPersistenceEnabled {
+            conversationStore.startThread(mode: currentMode.rawValue, personaId: persona.id)
+        }
+
+        // Ensure agent mode so code_agent tool works
+        if !Config.agentModeEnabled {
+            Config.setAgentModeEnabled(true)
+        }
+
+        llmService.injectSystemMessage(
+            """
+            [Code mode started. You are Claudio's hands-free coding pair-programmer on the glasses.             Multi-turn session. Prefer the code_agent tool for real repo changes. Match PT/EN.             Wait for explicit confirm before destructive actions.]
+            """
+        )
+
+        let agentNote = Config.agentModeEnabled
+            ? " Agent mode is on — say a task and I can dispatch code_agent."
+            : " Turn on Agent Mode in Settings to dispatch remote coding agents."
+        let msg = "Code mode on. Talk to me in Portuguese or English.\(agentNote)"
+        lastResponse = msg
+        await speechService.speak(msg)
+        print("🎭 Code mode activated (persona=\(persona.name), agent=\(Config.agentModeEnabled))")
+    }
+
+    // Hook Settings toggle: when user enables diarization mid-session, start captions.
+    func onDiarizationConfigChanged() {
+        if Config.isDiarizationConfigured {
+            maybeAutoStartDiarizedCaptions()
+        } else if ambientCaptions.isActive {
+            ambientCaptions.reconfigureForModeChange() // falls back to SFSpeech unlabeled
         }
     }
 
@@ -2795,7 +2999,9 @@ class AppState: ObservableObject, AppStateProtocol {
                 send: { [self] in
                     let rawResponse: String
                     let backgrounded = UIApplication.shared.applicationState == .background
-                    let locationCtx = classification.relevantSections.contains(.location) ? locationService.locationContext : nil
+                    let locationCtx = classification.relevantSections.contains(.location)
+                        ? enrichedLocationContext()
+                        : ambientRoomContextOnly()
                     let memoryCtx = Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? query : nil) : nil
                     // Cloud send with automatic model fall-over (BK P2b): active model leads, then
                     // the user's fallback order — spills on overflow / rate-limit / empty completion.
@@ -2964,7 +3170,7 @@ class AppState: ObservableObject, AppStateProtocol {
                     }
                     return try await llmService.sendMessageCascading(
                         query,
-                        locationContext: locationService.locationContext,
+                        locationContext: enrichedLocationContext(),
                         imageData: image,
                         memoryContext: Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? query : nil) : nil,
                         playbookContext: playbookStore.playbookContext(),

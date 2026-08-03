@@ -356,7 +356,13 @@ class LLMService: ObservableObject {
             prompt += "\n\n\(playbook)"
         }
         if let location = locationContext {
-            prompt += "\n\nUSER LOCATION: \(location)"
+            // May include RECENT ROOM AUDIO (speaker-labeled) appended by AppState.enrichedLocationContext().
+            if location.contains("RECENT ROOM AUDIO") {
+                prompt += "\n\n\(location)"
+                prompt += "\nWhen the user asks who said something, attribute to the labeled speakers. Prefer names over Speaker N when names are present."
+            } else {
+                prompt += "\n\nUSER LOCATION: \(location)"
+            }
         }
         if let nowPlaying = nowPlayingContext {
             prompt += "\n\n\(nowPlaying)"

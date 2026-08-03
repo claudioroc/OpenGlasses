@@ -17,6 +17,7 @@ import argparse
 import hmac
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -27,7 +28,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 def _now() -> float:
@@ -45,6 +46,60 @@ def _coerce_text(value: Any) -> str:
 def _json_response(status: int, payload: dict[str, Any]) -> bytes:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     return body
+
+
+# Quality / audit log — prompts & answers truncated + secret-redacted.
+# Default path is under ~/infrastructure/logs so launchd jobs already have a home for it.
+_DEFAULT_SESSION_LOG = Path.home() / "infrastructure" / "logs" / "openglasses-claude-bridge-sessions.jsonl"
+_SECRET_RE = re.compile(
+    r"(?i)(bearer\s+[a-z0-9._\-]+|"
+    r"sk-[a-z0-9]{10,}|"
+    r"api[_-]?key\s*[:=]\s*\S+|"
+    r"token\s*[:=]\s*\S+|"
+    r"password\s*[:=]\s*\S+)"
+)
+_session_log_lock = threading.Lock()
+_session_log_path: Path = _DEFAULT_SESSION_LOG
+
+
+def _redact(text: str, limit: int = 1200) -> str:
+    cleaned = _SECRET_RE.sub("[REDACTED]", text or "")
+    cleaned = cleaned.replace("\n", " ").strip()
+    if len(cleaned) > limit:
+        return cleaned[: limit - 1] + "…"
+    return cleaned
+
+
+def _append_session_log(event: dict[str, Any]) -> None:
+    """Append one JSONL event for quality review. Never raises into the request path."""
+    try:
+        path = _session_log_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(event, ensure_ascii=False)
+        with _session_log_lock:
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[claude-bridge] session log write failed: {exc}", file=sys.stderr)
+
+
+def _tail_session_log(limit: int = 20) -> list[dict[str, Any]]:
+    path = _session_log_path
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for line in lines[-max(1, min(limit, 200)) :]:
+        try:
+            obj = json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out
 
 
 @dataclass
@@ -178,6 +233,7 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
     if not record:
         return
 
+    started = _now()
     cmd = _build_command(claude_bin, record.workdir, session_id,
                          _prompt_with_context(record.prompt, record.project),
                          model, permission_mode)
@@ -191,6 +247,17 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
         )
     except Exception as exc:  # noqa: BLE001
         state.update_session(session_id, status="failed", error=str(exc))
+        _append_session_log({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "session_end",
+            "session_id": session_id,
+            "status": "failed",
+            "duration_s": round(_now() - started, 2),
+            "prompt": _redact(record.prompt),
+            "error": _redact(str(exc), 400),
+            "project": record.project,
+            "workdir": record.workdir,
+        })
         return
 
     state.update_session(session_id, pid=proc.pid, process=proc)
@@ -202,12 +269,24 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
         except Exception:  # noqa: BLE001
             pass
         state.update_session(session_id, status="failed", error=str(exc))
+        _append_session_log({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "session_end",
+            "session_id": session_id,
+            "status": "failed",
+            "duration_s": round(_now() - started, 2),
+            "prompt": _redact(record.prompt),
+            "error": _redact(str(exc), 400),
+            "project": record.project,
+        })
         return
 
     final_text, parsed_error = _extract_final_text(stdout_text)
     current = state.get_session(session_id)
     if not current:
         return
+
+    duration_s = round(_now() - started, 2)
 
     if current.status == "cancelled":
         state.update_session(
@@ -216,6 +295,15 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
             stderr=stderr_text,
             process=None,
         )
+        _append_session_log({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "session_end",
+            "session_id": session_id,
+            "status": "cancelled",
+            "duration_s": duration_s,
+            "prompt": _redact(record.prompt),
+            "project": record.project,
+        })
         return
 
     if proc.returncode != 0 or parsed_error:
@@ -228,6 +316,16 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
             stderr=stderr_text,
             process=None,
         )
+        _append_session_log({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "session_end",
+            "session_id": session_id,
+            "status": "failed",
+            "duration_s": duration_s,
+            "prompt": _redact(record.prompt),
+            "error": _redact(error, 600),
+            "project": record.project,
+        })
         return
 
     state.update_session(
@@ -238,6 +336,19 @@ def _run_session(state: BridgeState, claude_bin: str, model: str | None,
         stderr=stderr_text,
         process=None,
     )
+    _append_session_log({
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "event": "session_end",
+        "session_id": session_id,
+        "status": "completed",
+        "duration_s": duration_s,
+        "prompt": _redact(record.prompt),
+        "answer": _redact(final_text, 2000),
+        "answer_chars": len(final_text or ""),
+        "project": record.project,
+        "workdir": record.workdir,
+        "model": model,
+    })
 
 
 class ClaudeBridgeHandler(BaseHTTPRequestHandler):
@@ -273,7 +384,30 @@ class ClaudeBridgeHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self._send_json(HTTPStatus.OK, {"ok": True, "sessions": len(self.state.sessions)})
+            self._send_json(HTTPStatus.OK, {
+                "ok": True,
+                "sessions": len(self.state.sessions),
+                "session_log": str(_session_log_path),
+            })
+            return
+
+        # Quality review: last N redacted prompt/answer events (auth required).
+        if parsed.path in {"/v1/claude/sessions", "/v1/claude/sessions/recent"}:
+            if not self._authorized():
+                self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "missing or invalid bearer token"})
+                return
+            qs = parse_qs(parsed.query or "")
+            try:
+                limit = int((qs.get("limit") or ["20"])[0])
+            except ValueError:
+                limit = 20
+            events = _tail_session_log(limit)
+            self._send_json(HTTPStatus.OK, {
+                "ok": True,
+                "count": len(events),
+                "log": str(_session_log_path),
+                "events": events,
+            })
             return
 
         if parsed.path.startswith("/v1/claude/sessions/"):
@@ -341,6 +475,17 @@ class ClaudeBridgeHandler(BaseHTTPRequestHandler):
             workdir=workdir,
         )
         self.state.add_session(record)
+        _append_session_log({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "session_start",
+            "session_id": session_id,
+            "status": "running",
+            "prompt": _redact(prompt),
+            "project": project_hint,
+            "workdir": workdir,
+            "model": self.model,
+            "client": self.address_string(),
+        })
 
         thread = threading.Thread(
             target=_run_session,
@@ -419,6 +564,11 @@ def main() -> int:
              "but gates shell commands. Use 'default' to require manual approval for all tools.",
     )
     parser.add_argument("--token", default=os.environ.get("CLAUDE_BRIDGE_TOKEN", ""))
+    parser.add_argument(
+        "--session-log",
+        default=os.environ.get("CLAUDE_BRIDGE_SESSION_LOG", str(_DEFAULT_SESSION_LOG)),
+        help="JSONL path for redacted prompt/answer quality logs",
+    )
     args = parser.parse_args()
 
     if not args.token:
@@ -428,6 +578,13 @@ def main() -> int:
     if not Path(args.claude_bin).exists():
         print(f"Claude binary not found at {args.claude_bin}", file=sys.stderr)
         return 2
+
+    global _session_log_path
+    _session_log_path = Path(args.session_log).expanduser()
+    try:
+        _session_log_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[claude-bridge] could not create session log dir: {exc}", file=sys.stderr)
 
     server = ThreadingHTTPServer((args.host, args.port), ClaudeBridgeHandler)
     server.state = BridgeState()  # type: ignore[attr-defined]
@@ -439,6 +596,7 @@ def main() -> int:
 
     print(f"[claude-bridge] Listening on http://{args.host}:{args.port}/v1/claude")
     print(f"[claude-bridge] Default workdir: {server.default_workdir}")
+    print(f"[claude-bridge] Session quality log: {_session_log_path}")
     server.serve_forever()
     return 0
 
