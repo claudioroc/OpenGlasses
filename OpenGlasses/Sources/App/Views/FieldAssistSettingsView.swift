@@ -98,7 +98,7 @@ struct FieldAssistSettingsView: View {
                 // ──────────────── Offline sync (Plan T)
                 Section {
                     NavigationLink {
-                        SyncStatusView(engine: appState.syncEngine, reachability: appState.reachability)
+                        SyncStatusView(engine: appState.syncEngine, reachability: appState.reachability, conversationSyncQueue: appState.conversationSyncQueue)
                     } label: {
                         Label("Field Sync", systemImage: "arrow.triangle.2.circlepath")
                     }

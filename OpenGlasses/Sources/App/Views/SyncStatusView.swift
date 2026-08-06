@@ -8,10 +8,13 @@ struct SyncStatusView: View {
     @ObservedObject private var engine: SyncEngine
     @ObservedObject private var reachability: Reachability
     @State private var ops: [QueuedOp] = []
+    private let conversationSyncQueue: ConversationSyncQueue
+    @State private var conversationCounts: [SyncState: Int] = [:]
 
-    init(engine: SyncEngine, reachability: Reachability) {
+    init(engine: SyncEngine, reachability: Reachability, conversationSyncQueue: ConversationSyncQueue) {
         _engine = ObservedObject(wrappedValue: engine)
         _reachability = ObservedObject(wrappedValue: reachability)
+        self.conversationSyncQueue = conversationSyncQueue
     }
 
     var body: some View {
@@ -55,6 +58,15 @@ struct SyncStatusView: View {
                     }
                 }
             }
+
+            Section("Conversations") {
+                HStack { Text("Local only"); Spacer(); Text("\(conversationCounts[.pending, default: 0] + conversationCounts[.inFlight, default: 0])").foregroundStyle(.secondary) }
+                HStack { Text("Confirmed @ M2 (fallback)"); Spacer(); Text("\(conversationCounts[.confirmedM2, default: 0])").foregroundStyle(.orange) }
+                HStack { Text("Confirmed @ M4 (Overseer memory)"); Spacer(); Text("\(conversationCounts[.confirmedM4, default: 0])").foregroundStyle(.green) }
+                if conversationCounts[.savedLocalFile, default: 0] > 0 {
+                    HStack { Text("Saved locally, not synced"); Spacer(); Text("\(conversationCounts[.savedLocalFile, default: 0])").foregroundStyle(.red) }
+                }
+            }
         }
         .navigationTitle("Field Sync")
         .navigationBarTitleDisplayMode(.inline)
@@ -62,7 +74,10 @@ struct SyncStatusView: View {
         .onAppear(perform: reload)
     }
 
-    private func reload() { ops = appState.offlineQueue.all(limit: 100) }
+    private func reload() {
+        ops = appState.offlineQueue.all(limit: 100)
+        conversationCounts = conversationSyncQueue.counts()
+    }
 
     private func label(for kind: OpKind) -> String {
         switch kind {
