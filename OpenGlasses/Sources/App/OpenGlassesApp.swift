@@ -543,6 +543,11 @@ class AppState: ObservableObject, AppStateProtocol {
     let reachability = Reachability()
     lazy var syncEngine = SyncEngine(queue: offlineQueue, sink: LocalSyncSink())
 
+    /// Conversation sync queue (2026-08-05 design spec) -- deliberately separate from
+    /// offlineQueue above; shared between ConversationSyncClient and the status UI (Task 7)
+    /// so both read/write the same durable file instead of opening two SQLite handles on it.
+    let conversationSyncQueue = ConversationSyncQueue()
+
     /// Alternative hands-free triggers (Additional Capabilities #5) — shake/acoustic/volume, all
     /// opt-in, each routing to the same entry point as the wake word.
     let alternativeTriggers = AlternativeTriggerService()
@@ -1020,6 +1025,15 @@ class AppState: ObservableObject, AppStateProtocol {
         // active provider (on-device when that's their choice). Backfill existing history once.
         conversationStore.recallIndex = conversationIndex
         if conversationIndex.count() == 0 { conversationStore.backfillIndex() }
+
+        // Conversation sync (2026-08-05 design spec): M4 direct -> M2 fallback -> local file.
+        // Bearer token is the SAME ModelConfig.apiKey already used to talk to the glasses-router
+        // as a .custom provider -- no new credential introduced.
+        conversationStore.syncClient = ConversationSyncClient(
+            queue: conversationSyncQueue,
+            m4URL: URL(string: "http://192.168.10.135:3459/v1/sync/conversations")!,
+            m2URL: URL(string: "http://192.168.10.134:9801/v1/sync/conversations")!,
+            bearerToken: Config.savedModels.first(where: { $0.llmProvider == .custom })?.apiKey ?? "")
         RecallService.shared.configure(index: conversationIndex) { [weak self] question, hits in
             guard let self else { return RecallService.fallbackSummary(hits) }
             let prompt = RecallService.summarizationPrompt(question: question, hits: hits)

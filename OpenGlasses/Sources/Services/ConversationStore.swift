@@ -82,6 +82,10 @@ class ConversationStore: ObservableObject {
     /// `AppState`; nil keeps everything working with no indexing.
     weak var recallIndex: ConversationIndex?
 
+    /// Set by AppState. Fires the conversation-sync pipeline when a thread ends. Weak + optional
+    /// so tests and older call sites work unchanged with no sync configured.
+    weak var syncClient: ConversationSyncClient?
+
     /// Key for persisting the active thread ID across restarts.
     private static let activeThreadKey = "conversationStore_activeThreadId"
 
@@ -220,9 +224,11 @@ class ConversationStore: ObservableObject {
         }
         threads[idx].updatedAt = Date()
         save()
+        let finishedThread = threads[idx]
         activeThreadId = nil
         persistActiveSession()
         NSLog("[ConversationStore] Ended thread")
+        Task { await syncClient?.syncThread(finishedThread) }
     }
 
     /// Give a still-default thread a title derived from its first user message. Safe to call
