@@ -14,12 +14,7 @@ class GlassesConnectionService: ObservableObject {
     private var connectedDeviceId: DeviceIdentifier?
 
     init() {
-        // Don't call observeDevices() here — Wearables.configure() may not
-        // have been called yet (deferred until after onboarding).
-        // Call startObserving() explicitly after Wearables is configured.
-        if Config.hasCompletedOnboarding {
-            observeDevices()
-        }
+        // Wearables observers are attached explicitly after successful SDK configure.
     }
 
     /// Begin observing connected devices. Call after Wearables.configure().

@@ -60,6 +60,43 @@ enum SiriContentProvider {
                 allowedVaults: config.fieldSessionVaults
             )
         }
+        let fleet = UserDefaultsFleetSnapshotStore.shared.load()
+        if config.isEnabled(.fleetDeal) {
+            records += fleet.deals.map {
+                IndexableRecord(
+                    contentType: .fleetDeal,
+                    itemId: $0.id,
+                    title: $0.title,
+                    text: [$0.status, $0.location].compactMap { $0 }.joined(separator: " · "),
+                    keywords: ["fleet", "deal", $0.location].compactMap { $0 },
+                    date: nil
+                )
+            }
+        }
+        if config.isEnabled(.fleetJob) {
+            records += fleet.jobs.map {
+                IndexableRecord(
+                    contentType: .fleetJob,
+                    itemId: $0.id,
+                    title: $0.title,
+                    text: $0.phase.displayName,
+                    keywords: ["fleet", "job", $0.domain.displayName],
+                    date: $0.updatedAt
+                )
+            }
+        }
+        if config.isEnabled(.fleetAlert) {
+            records += fleet.alerts.map {
+                IndexableRecord(
+                    contentType: .fleetAlert,
+                    itemId: $0.id,
+                    title: $0.title,
+                    text: $0.summary.clipped(to: 180),
+                    keywords: ["fleet", "alert", $0.severity.rawValue],
+                    date: $0.createdAt
+                )
+            }
+        }
         return records
     }
 

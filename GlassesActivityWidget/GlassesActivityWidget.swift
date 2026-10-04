@@ -7,7 +7,9 @@ struct GlassesActivityWidgetBundle: WidgetBundle {
     @WidgetBundleBuilder
     var body: some Widget {
         GlassesActivityWidget()
+        FleetJobActivityWidget()
         OpenGlassesHomeWidget()
+        FleetStatusWidget()
         if #available(iOS 18.0, *) {
             ListeningControlWidget()
         }

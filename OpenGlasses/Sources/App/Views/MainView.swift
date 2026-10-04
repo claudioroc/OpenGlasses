@@ -7,7 +7,7 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedTab = 0
-    @State private var showOnboarding = Config.needsOnboarding
+    @State private var showOnboarding = Config.needsOnboarding && !AppRuntime.shouldSkipWearables
     @AppStorage("appAppearance") private var appearance: String = "dark"
     @AppStorage("accentColorName") private var accentColorName: String = "green"
 
@@ -59,6 +59,11 @@ struct MainView: View {
         .environment(\.appAccent, accent)
         .animation(.easeInOut(duration: 0.3), value: showOnboarding)
         .preferredColorScheme(colorScheme)
+        .onAppear {
+            if AppRuntime.shouldSkipWearables {
+                showOnboarding = false
+            }
+        }
         .sheet(item: $appState.phoneCameraRequest) { request in
             PhoneCameraView(
                 prompt: request.prompt,

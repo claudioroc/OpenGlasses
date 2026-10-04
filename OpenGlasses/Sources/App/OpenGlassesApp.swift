@@ -14,7 +14,27 @@ extension Notification.Name {
     static let diarizationConfigChanged = Notification.Name("diarizationConfigChanged")
 }
 
+enum AppRuntime {
+    static let isRunningTests: Bool = {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return true
+        }
+        if NSClassFromString("XCTestCase") != nil {
+            return true
+        }
+        return Bundle.allBundles.contains { $0.bundlePath.hasSuffix(".xctest") }
+    }()
+    static let shouldSkipWearables =
+        isRunningTests || ProcessInfo.processInfo.environment["OPENGLASSES_SKIP_WEARABLES"] == "1"
+    static var wearablesConfigured = false
+    static var canUseWearables: Bool { !shouldSkipWearables && wearablesConfigured }
+}
+
 private func processWearablesCallbackURL(_ url: URL, source: String) {
+    guard AppRuntime.canUseWearables else {
+        NSLog("[OpenGlasses] [\(source)] Ignoring Wearables callback while Wearables is unavailable")
+        return
+    }
     NSLog("[OpenGlasses] [\(source)] Received URL callback: \(url.absoluteString)")
     Task { @MainActor in
         AppStateProvider.shared?.recordCallback(url: url, source: source)
@@ -142,10 +162,11 @@ struct OpenGlassesApp: App {
         Config.migrateAssistantDefaultsIfNeeded()
         Config.migrateSmartModesIfNeeded()
         // Defer Wearables SDK (Bluetooth permission) until after onboarding
-        if Config.hasCompletedOnboarding {
+        if Config.hasCompletedOnboarding && !AppRuntime.shouldSkipWearables {
             configureWearables()
         }
         NetworkMonitorService.register()
+        FleetNotificationCoordinator.configure()
         // Re-validate any stored Field Assist license (catches expiry between launches).
         LicenseService.shared.loadStored()
     }
@@ -177,6 +198,20 @@ struct OpenGlassesApp: App {
                 }
             }
                 .onOpenURL { url in
+                    // Fleet widget / Live Activity deep links. Refreshing the
+                    // referenced job keeps the local snapshot and system surfaces current.
+                    if url.scheme == "openglasses", url.host == "fleet" {
+                        let parts = url.pathComponents.filter { $0 != "/" }
+                        Task { @MainActor in
+                            if parts.count >= 2, parts[0] == "job" {
+                                _ = try? await FleetSiriActions.taskStatus(jobId: parts[1])
+                            } else {
+                                _ = try? await FleetSiriActions.status()
+                            }
+                        }
+                        return
+                    }
+
                     // Handle shortcut x-callback-url results
                     if url.scheme == "openglasses",
                        ["shortcut-result", "shortcut-cancel", "shortcut-error"].contains(url.host) {
@@ -313,7 +348,7 @@ struct OpenGlassesApp: App {
                     appState.liveActivityManager.start(glassesName: appState.glassesService.deviceName ?? "OpenGlasses")
                     appState.updateLiveActivity()
                 }
-                if Config.hasCompletedOnboarding {
+                if Config.hasCompletedOnboarding && AppRuntime.canUseWearables {
                     Task {
                         // Give onOpenURL time to process any pending Meta Auth callbacks
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -355,6 +390,7 @@ struct OpenGlassesApp: App {
         do {
             NSLog("[OpenGlasses] Logging active")
             try Wearables.configure()
+            AppRuntime.wearablesConfigured = true
             NSLog("[OpenGlasses] Meta Wearables SDK configured successfully")
             let state = Wearables.shared.registrationState
             NSLog("[OpenGlasses] Registration state: \(state.rawValue)")
@@ -385,6 +421,7 @@ struct OpenGlassesApp: App {
                 NSLog("[OpenGlasses] Configuration(bundle:) parse failed: \(error.localizedDescription)")
             }
         } catch {
+            AppRuntime.wearablesConfigured = false
             NSLog("[OpenGlasses] Failed to configure Wearables SDK: \(error.localizedDescription)")
         }
     }
@@ -932,7 +969,7 @@ class AppState: ObservableObject, AppStateProtocol {
         setupServiceCallbacks()
 
         // Defer Wearables.shared calls until after onboarding (requires configure() first)
-        if Config.hasCompletedOnboarding {
+        if Config.hasCompletedOnboarding && AppRuntime.canUseWearables {
             observeGlassesConnection()
             autoConnectGlasses()
             startPermissionRequiringServices()
@@ -1182,6 +1219,7 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Start services that require system permissions (Bluetooth, Location, Mic, HomeKit).
     /// Called after onboarding completes, or at init if onboarding is already done.
     func startPermissionRequiringServices() {
+        guard AppRuntime.canUseWearables else { return }
         // Start glasses observers (requires Wearables.configure() first)
         glassesService.startObserving()
         observeGlassesConnection()

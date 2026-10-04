@@ -764,9 +764,11 @@ struct OnboardingView: View {
         guard !bluetoothConfigured else { return }
         do {
             try Wearables.configure()
+            AppRuntime.wearablesConfigured = true
             bluetoothConfigured = true
             NSLog("[Onboarding] Wearables SDK configured")
         } catch {
+            AppRuntime.wearablesConfigured = false
             NSLog("[Onboarding] Wearables.configure() failed: %@", error.localizedDescription)
             // Still mark as configured to avoid retry loop — user can reconnect in Settings
             bluetoothConfigured = true
@@ -861,6 +863,10 @@ struct OnboardingView: View {
         }
         .onAppear {
             cameraGranted = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+            guard AppRuntime.canUseWearables else {
+                metaRegistered = false
+                return
+            }
             metaRegistered = bluetoothConfigured && Wearables.shared.registrationState.rawValue >= 3
         }
     }
@@ -870,6 +876,10 @@ struct OnboardingView: View {
     }
 
     private func connectToMetaAI() async {
+        guard AppRuntime.canUseWearables else {
+            registrationStatus = "Meta AI integration is disabled while tests are running"
+            return
+        }
         guard bluetoothConfigured else {
             registrationStatus = "Grant Bluetooth permission first (previous page)"
             return

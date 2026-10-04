@@ -107,24 +107,6 @@ struct OpenGlassesShortcuts: AppShortcutsProvider {
             shortTitle: "Take Photo",
             systemImageName: "camera.fill"
         )
-        AppShortcut(
-            intent: ToggleGeminiLiveIntent(),
-            phrases: [
-                "Toggle \(.applicationName) live",
-                "\(.applicationName) live mode"
-            ],
-            shortTitle: "Gemini Live",
-            systemImageName: "waveform"
-        )
-        AppShortcut(
-            intent: ReadTextIntent(),
-            phrases: [
-                "Read this with \(.applicationName)",
-                "\(.applicationName) read this"
-            ],
-            shortTitle: "Read Text",
-            systemImageName: "text.viewfinder"
-        )
         // Plan BQ: the parameterized action shortcut — one phrase covers every action the
         // user has exposed (built-in toggles, harvested capabilities, hand-made actions),
         // because the AppEntity's query is runtime data. Took AnalyzeFood's slot under the
@@ -141,24 +123,6 @@ struct OpenGlassesShortcuts: AppShortcutsProvider {
             systemImageName: "sparkles"
         )
         AppShortcut(
-            intent: DescribeEnvironmentIntent(),
-            phrases: [
-                "Describe surroundings \(.applicationName)",
-                "\(.applicationName) what's around me"
-            ],
-            shortTitle: "Describe Environment",
-            systemImageName: "eye"
-        )
-        AppShortcut(
-            intent: ConnectGlassesIntent(),
-            phrases: [
-                "Connect \(.applicationName)",
-                "\(.applicationName) connect"
-            ],
-            shortTitle: "Connect Glasses",
-            systemImageName: "eyeglasses"
-        )
-        AppShortcut(
             intent: DisableListeningIntent(),
             phrases: [
                 "Turn off \(.applicationName)",
@@ -168,15 +132,52 @@ struct OpenGlassesShortcuts: AppShortcutsProvider {
             shortTitle: "Stop Listening",
             systemImageName: "mic.slash"
         )
+        // Five promoted fleet phrases fit inside iOS's ten-App-Shortcut cap.
+        // Every other fleet intent remains discoverable in the Shortcuts app.
         AppShortcut(
-            intent: EnableListeningIntent(),
+            intent: FleetStatusIntent(),
             phrases: [
-                "Turn on \(.applicationName)",
-                "Start \(.applicationName) listening",
-                "\(.applicationName) start listening"
+                "Fleet status with \(.applicationName)",
+                "Check my fleet with \(.applicationName)"
             ],
-            shortTitle: "Start Listening",
-            systemImageName: "mic.fill"
+            shortTitle: "Fleet Status",
+            systemImageName: "point.3.connected.trianglepath.dotted"
+        )
+        AppShortcut(
+            intent: FleetDailyBriefingIntent(),
+            phrases: [
+                "Fleet briefing with \(.applicationName)",
+                "My fleet briefing on \(.applicationName)"
+            ],
+            shortTitle: "Fleet Briefing",
+            systemImageName: "text.page.badge.magnifyingglass"
+        )
+        AppShortcut(
+            intent: RememberInCortexIntent(),
+            phrases: [
+                "Remember in Cortex with \(.applicationName)",
+                "Save to Cortex with \(.applicationName)"
+            ],
+            shortTitle: "Remember in Cortex",
+            systemImageName: "brain.head.profile"
+        )
+        AppShortcut(
+            intent: FindFleetDealIntent(),
+            phrases: [
+                "Find a fleet deal with \(.applicationName)",
+                "Look up a deal on \(.applicationName)"
+            ],
+            shortTitle: "Find Fleet Deal",
+            systemImageName: "house.and.flag"
+        )
+        AppShortcut(
+            intent: StartFleetTaskIntent(),
+            phrases: [
+                "Start a fleet task with \(.applicationName)",
+                "Queue fleet work on \(.applicationName)"
+            ],
+            shortTitle: "Start Fleet Task",
+            systemImageName: "bolt.horizontal.circle"
         )
     }
 }

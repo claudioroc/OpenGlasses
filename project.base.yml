@@ -109,6 +109,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.app
+        OPENGLASSES_APP_GROUP: group.com.openglasses.app
         MARKETING_VERSION: "2026.7"
         CURRENT_PROJECT_VERSION: "311"
         SWIFT_VERSION: "5.9"
@@ -161,6 +162,7 @@ targets:
     sources:
       - path: GlassesActivityWidget
       - path: OpenGlasses/Sources/Models/GlassesActivityAttributes.swift
+      - path: OpenGlasses/Sources/Models/FleetJobActivityAttributes.swift
     entitlements:
       path: GlassesActivityWidget/GlassesActivityWidget.entitlements
       properties:
@@ -177,6 +179,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.app.GlassesActivityWidget
+        OPENGLASSES_APP_GROUP: group.com.openglasses.app
         MARKETING_VERSION: "2026.7"
         CURRENT_PROJECT_VERSION: "311"
         SWIFT_VERSION: "5.9"

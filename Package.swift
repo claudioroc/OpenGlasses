@@ -31,7 +31,15 @@ let package = Package(
             ],
             path: "OpenGlasses/Sources",
             resources: [
-                .process("Resources")
+                .process("Resources/Assets.xcassets"),
+                .process("Resources/Localizable.xcstrings"),
+                .process("Resources/PrivacyInfo.xcprivacy"),
+                .process("Resources/Translations"),
+                .process("Resources/intro.mp4"),
+                .process("Resources/mcp-catalog.json"),
+                // Preserve vault subdirectories so duplicate leaf filenames like safety.md and
+                // error_codes.md do not collide in the package bundle.
+                .copy("Resources/Vaults"),
             ]
         ),
     ]

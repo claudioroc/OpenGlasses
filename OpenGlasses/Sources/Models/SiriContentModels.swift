@@ -19,6 +19,9 @@ enum SiriContentType: String, Codable, CaseIterable {
     case studyDeck = "study_deck"
     case conversation
     case fieldSession = "field_session"
+    case fleetDeal = "fleet_deal"
+    case fleetJob = "fleet_job"
+    case fleetAlert = "fleet_alert"
 
     var displayLabel: String {
         switch self {
@@ -30,6 +33,9 @@ enum SiriContentType: String, Codable, CaseIterable {
         case .studyDeck: return "Study Decks"
         case .conversation: return "Conversations"
         case .fieldSession: return "Field Sessions"
+        case .fleetDeal: return "Fleet Deals"
+        case .fleetJob: return "Fleet Jobs"
+        case .fleetAlert: return "Fleet Alerts"
         }
     }
 
@@ -37,7 +43,7 @@ enum SiriContentType: String, Codable, CaseIterable {
     /// defaults on.
     var defaultEnabled: Bool {
         switch self {
-        case .conversation, .fieldSession: return false
+        case .conversation, .fieldSession, .fleetDeal, .fleetJob, .fleetAlert: return false
         default: return true
         }
     }
