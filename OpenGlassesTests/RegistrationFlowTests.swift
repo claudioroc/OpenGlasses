@@ -30,21 +30,19 @@ final class RegistrationFlowTests: XCTestCase {
     }
 
     func testNeedsFreshMetaPairingWhenGlassesWereOff() {
-        XCTAssertFalse(RegistrationFlow.needsFreshMetaPairing(stateRaw: 0, hasDevice: false))
-        XCTAssertFalse(RegistrationFlow.needsFreshMetaPairing(stateRaw: 3, hasDevice: true))
+        XCTAssertFalse(RegistrationFlow.needsFreshMetaPairing(stateRaw: 0, hasDevice: false),
+                      "brand-new session can startRegistration without unregister")
+        XCTAssertTrue(RegistrationFlow.needsFreshMetaPairing(stateRaw: 3, hasDevice: true),
+                      "already paired — unregister so Meta shows the DAT sheet again")
         XCTAssertTrue(RegistrationFlow.needsFreshMetaPairing(stateRaw: 1, hasDevice: false))
         XCTAssertTrue(RegistrationFlow.needsFreshMetaPairing(stateRaw: 3, hasDevice: false),
                       "registered with no device is the glasses-off first-flow trap")
     }
 
-    func testRetryHintTellsTheUserToOpenMetaAgain() {
-        let hint = RegistrationFlow.retryHint(stateRaw: 3, hasDevice: false)
-        XCTAssertTrue(hint.contains("Connect"))
+    func testRetryHintTellsTheUserToApproveInMeta() {
+        let hint = RegistrationFlow.retryHint(stateRaw: 2, hasDevice: false)
         XCTAssertTrue(hint.localizedCaseInsensitiveContains("Meta"))
+        XCTAssertTrue(hint.localizedCaseInsensitiveContains("Approve"))
         XCTAssertFalse(hint.contains(where: \.isNumber), "no internal state digits")
-    }
-
-    func testMetaCompanionURL() {
-        XCTAssertEqual(RegistrationFlow.metaCompanionURLString, "fb-viewapp://")
     }
 }

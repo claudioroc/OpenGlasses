@@ -10,16 +10,16 @@ import Foundation
 /// status shown was a raw internal state number, not something the user could act on.
 ///
 /// A second trap: if the glasses were off during that first approval, the SDK can sit at a
-/// non-zero registration state with **no device**. Later `startRegistration()` calls then no-op
-/// and never reopen Meta, so Connect has to unregister first and always deep-link the companion.
+/// non-zero registration state with **no device**. Later `startRegistration()` calls then no-op.
+/// Connect must unregister first so DAT can deep-link the **authorization sheet** again.
+///
+/// Do **not** open `fb-viewapp://` yourself. That launches Meta AI's home screen and replaces
+/// the DAT approval URL, so the user sees the app with no confirmation — unlike onboarding.
 enum RegistrationFlow {
     /// How long to keep polling for the Meta AI approval before giving up (still with guidance).
     static let approvalDeadlineSeconds: Int64 = 25
     /// `registrationState` raw value at which camera/mic capabilities become available.
     static let registeredStateRawValue = 3
-    /// Meta View / Ray-Ban companion — `startRegistration()` should open this, but after a
-    /// failed first flow it often does not, so Connect opens it explicitly.
-    static let metaCompanionURLString = "fb-viewapp://"
 
     static func isRegistered(stateRaw: Int) -> Bool { stateRaw >= registeredStateRawValue }
 
@@ -30,17 +30,14 @@ enum RegistrationFlow {
             : "Approve OpenGlasses in the Meta AI app to continue…"
     }
 
-    /// First pairing started (or looks finished) but the glasses never appeared. Tapping Connect
-    /// again has to unregister first, otherwise Meta never reopens the approval sheet.
+    /// Explicit Connect always starts a fresh DAT session so Meta shows the authorization request
+    /// the same way onboarding does. A leftover non-zero state is enough to skip the sheet.
     static func needsFreshMetaPairing(stateRaw: Int, hasDevice: Bool) -> Bool {
-        !hasDevice && stateRaw > 0
+        stateRaw > 0 || hasDevice
     }
 
     static func retryHint(stateRaw: Int, hasDevice: Bool) -> String {
         if hasDevice { return "Connected" }
-        if needsFreshMetaPairing(stateRaw: stateRaw, hasDevice: hasDevice) {
-            return "Turn the glasses on, then tap Connect to open Meta AI again"
-        }
-        return "Turn the glasses on and tap Connect to approve OpenGlasses in Meta AI"
+        return "Approve OpenGlasses in the Meta AI app, then return here"
     }
 }

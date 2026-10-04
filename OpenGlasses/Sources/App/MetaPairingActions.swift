@@ -1,7 +1,8 @@
 import Foundation
 
 extension AppState {
-    /// User-tapped Connect: stop glasses IO, reset a stuck Meta pairing, and reopen the companion.
+    /// User-tapped Connect: stop glasses IO, reset a stuck Meta pairing, and let DAT
+    /// present the Meta AI authorization sheet (same as onboarding).
     func reconnectToMetaAI() async {
         wakeWordService.stopListening()
         await cameraService.tearDown()

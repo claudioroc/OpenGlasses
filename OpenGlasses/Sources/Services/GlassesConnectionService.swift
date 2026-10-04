@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 import MWDATCore
 
 /// Service for connecting to Ray-Ban Meta smart glasses
@@ -67,11 +66,9 @@ class GlassesConnectionService: ObservableObject {
         await reconnectToMeta()
     }
 
-    /// User-initiated Connect. Always reopens the Meta companion.
-    ///
-    /// If the first flow ran while the glasses were off, the SDK can sit at a non-zero
-    /// registration state with **no device**. Later `startRegistration()` calls then no-op
-    /// and never reopen Meta. Unregister first so the approval sheet shows again.
+    /// User-initiated Connect. Mirrors onboarding: `startRegistration()` is what deep-links
+    /// Meta AI with the DAT authorization request. Opening `fb-viewapp://` ourselves would
+    /// replace that sheet with Meta's home screen.
     func reconnectToMeta() async {
         guard !isPairingInFlight else { return }
         isPairingInFlight = true
@@ -96,20 +93,20 @@ class GlassesConnectionService: ObservableObject {
                 print("📋 Unregistration failed: \(error)")
             }
             isConnected = false
+            connectedDeviceId = nil
+            deviceName = nil
             UserDefaults.standard.set(false, forKey: "hasRegisteredWithMeta")
             try? await Task.sleep(nanoseconds: 800_000_000)
         }
 
-        connectionStatus = "Opening Meta app…"
+        connectionStatus = RegistrationFlow.status(stateRaw: Wearables.shared.registrationState.rawValue)
         do {
             try await Wearables.shared.startRegistration()
-            print("📋 startRegistration after reconnect")
+            print("📋 startRegistration — DAT should present the Meta authorization sheet")
         } catch {
             print("❌ startRegistration() failed: \(error)")
             connectionStatus = "Connection failed: \(error.localizedDescription)"
         }
-
-        openMetaCompanionApp()
 
         var stateAfter = Wearables.shared.registrationState
         let deadline = ContinuousClock.now + .seconds(RegistrationFlow.approvalDeadlineSeconds)
@@ -120,22 +117,19 @@ class GlassesConnectionService: ObservableObject {
         }
 
         if RegistrationFlow.isRegistered(stateRaw: stateAfter.rawValue) {
-            if Wearables.shared.devices.isEmpty {
-                connectionStatus = RegistrationFlow.retryHint(stateRaw: stateAfter.rawValue, hasDevice: false)
-                openMetaCompanionApp()
-            } else {
-                connectionStatus = RegistrationFlow.status(stateRaw: stateAfter.rawValue)
+            connectionStatus = "Approve camera in Meta AI…"
+            do {
+                let camera = try await Wearables.shared.requestPermission(.camera)
+                print("📋 Meta camera permission: \(camera)")
+            } catch {
+                print("📋 Meta camera permission request failed: \(error)")
             }
+            connectionStatus = hasDevice
+                ? "Connected to \(deviceName ?? "glasses")"
+                : RegistrationFlow.status(stateRaw: stateAfter.rawValue)
         } else {
             connectionStatus = RegistrationFlow.retryHint(stateRaw: stateAfter.rawValue, hasDevice: false)
-            openMetaCompanionApp()
         }
-    }
-
-    func openMetaCompanionApp() {
-        guard let url = URL(string: RegistrationFlow.metaCompanionURLString) else { return }
-        UIApplication.shared.open(url, options: [:])
-        print("📋 Opened Meta companion \(RegistrationFlow.metaCompanionURLString)")
     }
 
     func disconnect() {

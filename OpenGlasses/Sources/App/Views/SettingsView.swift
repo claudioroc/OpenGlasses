@@ -1207,7 +1207,7 @@ struct HardwarePrivacyView: View {
             } header: {
                 Text("Glasses Diagnostics")
             } footer: {
-                Text("Connect reopens the Meta pairing sheet if the first flow failed (glasses were off). Reset unregisters with Meta and starts over.")
+                Text("Connect starts a fresh Meta pairing so the DAT authorization sheet appears, same as onboarding. Reset only if that still sticks.")
             }
 
             Section {

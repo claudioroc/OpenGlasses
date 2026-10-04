@@ -233,7 +233,7 @@ struct MetaPairingBanner: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color(.label))
                 Text(glasses.connectionStatus == "Not connected" || glasses.connectionStatus == "Disconnected"
-                     ? "Turn the glasses on, then tap Connect. This opens the Meta app so you can approve OpenGlasses again."
+                     ? "Turn the glasses on, then tap Connect. Meta AI will ask you to approve OpenGlasses — the same confirmation as first setup."
                      : glasses.connectionStatus)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
