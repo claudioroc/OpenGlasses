@@ -59,6 +59,17 @@ class CameraService: ObservableObject {
     /// Number of consecutive stall recoveries (for diagnostics).
     private var stallRecoveryCount = 0
 
+    /// Snapshot for the local MCP glasses server (`/glasses_status`).
+    var statusSnapshot: [String: Any] {
+        [
+            "permissionGranted": permissionGranted,
+            "streaming": isStreaming,
+            "streamingStatus": streamingStatus.rawValue,
+            "hasFrame": latestFrame != nil,
+            "captureInProgress": isCaptureInProgress,
+        ]
+    }
+
     /// iPhone back-camera fallback, used when the glasses camera is unavailable.
     private let phoneSource = PhoneCameraSource()
 

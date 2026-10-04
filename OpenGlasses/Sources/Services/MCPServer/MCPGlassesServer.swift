@@ -210,7 +210,7 @@ final class MCPGlassesServer: ObservableObject {
         }
         switch (request.method, request.path) {
         case ("GET", "/see_glasses"):
-            return seeGlasses()
+            return await seeGlasses()
         case ("GET", "/glasses_status"):
             return glassesStatus()
         case ("POST", "/send_to_glasses"):
@@ -230,20 +230,44 @@ final class MCPGlassesServer: ObservableObject {
         return diff == 0
     }
 
-    private func seeGlasses() -> Data {
+    private func seeGlasses() async -> Data {
+        // Idle DAT sessions have no latestFrame. Trigger a glasses capture so
+        // /see_glasses is a real look-through, not a stale-buffer read.
+        if let camera, camera.latestFrame == nil {
+            do {
+                let jpeg = try await camera.capturePhoto(allowPhoneFallback: false)
+                lastServedFrameAt = Date()
+                return Self.httpResponse(status: "200 OK", json: [
+                    "image_b64": jpeg.base64EncodedString(),
+                    "timestamp": ISO8601DateFormatter().string(from: Date()),
+                    "source": "capture",
+                ])
+            } catch {
+                NSLog("[MCPServer] see_glasses capture failed: %@", error.localizedDescription)
+                return Self.httpResponse(status: "503 Service Unavailable", json: [
+                    "error": error.localizedDescription,
+                    "connected": false,
+                ])
+            }
+        }
         guard let frame = camera?.latestFrame, let jpeg = frame.jpegData(compressionQuality: 0.7) else {
-            return Self.httpResponse(status: "503 Service Unavailable", json: ["error": "no frame available"])
+            return Self.httpResponse(status: "503 Service Unavailable", json: [
+                "error": "no frame available",
+                "connected": false,
+            ])
         }
         lastServedFrameAt = Date()
         return Self.httpResponse(status: "200 OK", json: [
             "image_b64": jpeg.base64EncodedString(),
-            "timestamp": ISO8601DateFormatter().string(from: Date())
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "source": "stream",
         ])
     }
 
     private func glassesStatus() -> Data {
+        var payload: [String: Any] = camera?.statusSnapshot ?? [:]
         let hasFrame = camera?.latestFrame != nil
-        var payload: [String: Any] = ["connected": hasFrame]
+        payload["connected"] = hasFrame
         if let served = lastServedFrameAt {
             payload["frame_age_ms"] = Int(Date().timeIntervalSince(served) * 1000)
             payload["last_frame_iso"] = ISO8601DateFormatter().string(from: served)
