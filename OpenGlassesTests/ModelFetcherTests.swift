@@ -73,6 +73,10 @@ final class ModelFetcherTests: XCTestCase {
         XCTAssertTrue(inferredVision(.custom, "pixtral-12b"))
         XCTAssertTrue(inferredVision(.custom, "minicpm-v"))
         XCTAssertTrue(inferredVision(.custom, "qwen2.5-vl-7b"))
+        XCTAssertTrue(inferredVision(.custom, "grok-4.5"))
+        XCTAssertTrue(inferredVision(.custom, "grok-4"))
+        XCTAssertTrue(inferredVision(.custom, "anything", baseURL: "https://api.x.ai/v1"))
+        XCTAssertTrue(inferredVision(.custom, "anything", baseURL: "http://192.168.10.135:3459/v1"))
     }
 
     func testInferredVisionCustomTextOnlyModel() {
@@ -105,6 +109,7 @@ final class ModelFetcherTests: XCTestCase {
         XCTAssertTrue(inferredVision(.xai, "grok-4"))
         XCTAssertTrue(inferredVision(.xai, "grok-4-fast"))
         XCTAssertFalse(inferredVision(.xai, "grok-3-mini"))
+        XCTAssertTrue(inferredVision(.openrouter, "x-ai/grok-4.5"))
         XCTAssertTrue(inferredVision(.openrouter, "meta-llama/llava-13b"))
         XCTAssertFalse(inferredVision(.openrouter, "mistralai/mistral-7b"))
     }

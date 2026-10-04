@@ -204,8 +204,21 @@ enum ModelCascade {
                    _ failure: ModelFallbackChain.FailureClass) async -> Void = { _, _, _ in },
         attempt: (ModelFallbackChain.Candidate) async throws -> String
     ) async throws -> String {
-        guard var current = candidates.first else {
-            throw LLMError.missingAPIKey("No model configured")
+        // Honour capability filters on the *first* attempt too. Otherwise a text-only
+        // active model on a photo turn would "succeed" by silently dropping the image
+        // instead of hopping to a vision-capable candidate.
+        guard var current = ModelFallbackChain.next(
+            candidates: candidates,
+            tried: [],
+            needs: needs,
+            failure: .retryOtherModel,
+            currentWindow: 0
+        ) else {
+            throw LLMError.missingAPIKey(
+                needs.requiresVision
+                    ? "No vision-capable model configured — add one in Settings"
+                    : "No model configured"
+            )
         }
         var tried = Set<String>()
         var attempts = 0

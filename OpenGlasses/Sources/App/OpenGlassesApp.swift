@@ -1914,22 +1914,62 @@ class AppState: ObservableObject, AppStateProtocol {
         Task { await sendPhotoToLLM(imageData: data, prompt: req.prompt, userLog: req.userLog) }
     }
 
+    /// Photo → LLM with automatic model fall-over (BK P2b). Describe / Plant ID / the
+    /// camera quick-menu must not die on the active model's missing Anthropic key when
+    /// Grok CLI (router) or another vision candidate is already configured.
+    private func analyzePhotoWithLLM(imageData: Data, prompt: String, userLog: String) async throws -> String {
+        let rawResponse = try await llmService.sendMessageCascading(
+            prompt,
+            locationContext: locationService.locationContext,
+            imageData: imageData,
+            memoryContext: Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? prompt : nil) : nil
+        )
+        let response = Config.userMemoryEnabled ? userMemory.parseAndExecuteCommands(in: rawResponse) : rawResponse
+        lastResponse = response
+        if Config.conversationPersistenceEnabled {
+            conversationStore.appendMessage(role: "user", content: userLog)
+            conversationStore.appendMessage(role: "assistant", content: response)
+        }
+        return response
+    }
+
+    private func finishPhotoSuccess(response: String) async {
+        isProcessing = false
+        speechService.stopThinkingSound()
+        startStopListener()
+        await speechService.speak(response)
+        stopStopListener()
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    /// `cameraFailed` is true only when capture itself threw. A missing API key or
+    /// cascade exhaustion is an analysis failure — do not wrap it as a camera error.
+    private func finishPhotoFailure(_ error: Error, cameraFailed: Bool) async {
+        if currentMode == .direct {
+            cameraService.restoreAudioForWakeWord()
+        }
+        isProcessing = false
+        speechService.stopThinkingSound()
+        let reason = error.localizedDescription
+        if cameraFailed {
+            errorMessage = "Glasses camera failed: \(reason)"
+            await speechService.speak(
+                "I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again."
+            )
+        } else {
+            errorMessage = reason
+            await speechService.speak("I got the photo, but analysis failed. \(reason)")
+        }
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+    }
+
     private func sendPhotoToLLM(imageData: Data, prompt: String, userLog: String) async {
         isProcessing = true
         speechService.startThinkingSound()
         do {
-            let rawResponse = try await llmService.sendMessage(
-                prompt,
-                locationContext: locationService.locationContext,
-                imageData: imageData,
-                memoryContext: Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? prompt : nil) : nil
-            )
-            let response = Config.userMemoryEnabled ? userMemory.parseAndExecuteCommands(in: rawResponse) : rawResponse
-            lastResponse = response
-            if Config.conversationPersistenceEnabled {
-                conversationStore.appendMessage(role: "user", content: userLog)
-                conversationStore.appendMessage(role: "assistant", content: response)
-            }
+            let response = try await analyzePhotoWithLLM(imageData: imageData, prompt: prompt, userLog: userLog)
             isProcessing = false
             speechService.stopThinkingSound()
             await speechService.speak(response)
@@ -1958,42 +1998,15 @@ class AppState: ObservableObject, AppStateProtocol {
             }
             cameraService.saveToPhotoLibrary(photoData)
             print("📸 Glasses photo + prompt: \(prompt)")
-
-            let rawResponse = try await llmService.sendMessage(
-                prompt,
-                locationContext: locationService.locationContext,
-                imageData: photoData,
-                memoryContext: Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? prompt : nil) : nil
-            )
-            let response = Config.userMemoryEnabled ? userMemory.parseAndExecuteCommands(in: rawResponse) : rawResponse
-            lastResponse = response
-            if Config.conversationPersistenceEnabled {
-                conversationStore.appendMessage(role: "user", content: "[Photo] \(prompt)")
-                conversationStore.appendMessage(role: "assistant", content: response)
+            do {
+                let response = try await analyzePhotoWithLLM(
+                    imageData: photoData, prompt: prompt, userLog: "[Photo] \(prompt)")
+                await finishPhotoSuccess(response: response)
+            } catch {
+                await finishPhotoFailure(error, cameraFailed: false)
             }
-
-            isProcessing = false
-            speechService.stopThinkingSound()
-            startStopListener()
-            await speechService.speak(response)
-            stopStopListener()
-
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
         } catch {
-            if currentMode == .direct {
-                cameraService.restoreAudioForWakeWord()
-            }
-            isProcessing = false
-            speechService.stopThinkingSound()
-            // Speak a clear glasses-camera error instead of silently opening the phone.
-            let reason = error.localizedDescription
-            errorMessage = "Glasses camera failed: \(reason)"
-            await speechService.speak(
-                "I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again."
-            )
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.error)
+            await finishPhotoFailure(error, cameraFailed: true)
         }
     }
 
@@ -2083,43 +2096,17 @@ class AppState: ObservableObject, AppStateProtocol {
             }
             cameraService.saveToPhotoLibrary(photoData)
             print("📸 Manual photo captured, sending to LLM for analysis")
-
             let prompt = "Describe what you see in this image."
-            let rawResponse = try await llmService.sendMessage(
-                prompt,
-                locationContext: locationService.locationContext,
-                imageData: photoData,
-                memoryContext: Config.userMemoryEnabled ? userMemory.systemPromptContext(query: Config.userMemoryRetrievalEnabled ? prompt : nil) : nil
-            )
-            let response = Config.userMemoryEnabled ? userMemory.parseAndExecuteCommands(in: rawResponse) : rawResponse
-            lastResponse = response
-            if Config.conversationPersistenceEnabled {
-                conversationStore.appendMessage(role: "user", content: "[Photo taken manually]")
-                conversationStore.appendMessage(role: "assistant", content: response)
+            do {
+                let response = try await analyzePhotoWithLLM(
+                    imageData: photoData, prompt: prompt, userLog: "[Photo taken manually]")
+                print("🤖 \(llmService.activeModelName) (vision): \(response)")
+                await finishPhotoSuccess(response: response)
+            } catch {
+                await finishPhotoFailure(error, cameraFailed: false)
             }
-            print("🤖 \(llmService.activeModelName) (vision): \(response)")
-
-            isProcessing = false
-            speechService.stopThinkingSound()
-            startStopListener()
-            await speechService.speak(response)
-            stopStopListener()
-
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
         } catch {
-            if currentMode == .direct {
-                cameraService.restoreAudioForWakeWord()
-            }
-            isProcessing = false
-            speechService.stopThinkingSound()
-            let reason = error.localizedDescription
-            errorMessage = "Glasses camera failed: \(reason)"
-            await speechService.speak(
-                "I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again."
-            )
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.error)
+            await finishPhotoFailure(error, cameraFailed: true)
         }
     }
 
@@ -2746,7 +2733,7 @@ class AppState: ObservableObject, AppStateProtocol {
                             self.cameraService.saveToPhotoLibrary(photoData)
                             print("📸 Photo captured, sending to LLM with prompt: \(query)")
 
-                            return try await self.llmService.sendMessage(
+                            return try await self.llmService.sendMessageCascading(
                                 query,
                                 locationContext: self.locationService.locationContext,
                                 imageData: photoData,
@@ -2781,8 +2768,14 @@ class AppState: ObservableObject, AppStateProtocol {
                         onError: { error in
                             self.cameraService.restoreAudioForWakeWord()
                             print("📸 Photo capture failed: \(error)")
-                            self.lastResponse = "Photo failed: \(error.localizedDescription)"
-                            await self.speechService.speak("Sorry, I couldn't take a photo or process the image. \(error.localizedDescription)")
+                            let reason = error.localizedDescription
+                            if error is CameraError {
+                                self.lastResponse = "Glasses camera failed: \(reason)"
+                                await self.speechService.speak("I couldn't use the glasses camera. \(reason). Check the Meta app connection, then try again.")
+                            } else {
+                                self.lastResponse = reason
+                                await self.speechService.speak("I got the photo, but analysis failed. \(reason)")
+                            }
                         },
                         finish: {
                             self.isProcessing = false

@@ -218,6 +218,35 @@ final class ModelCascadeTests: XCTestCase {
         XCTAssertEqual(switches, ["a->b"])
     }
 
+    func testVisionTurnSkipsTextOnlyLeadCandidate() async throws {
+        var calls: [String] = []
+        let out = try await ModelCascade.run(
+            candidates: [cloud("a", vision: false), cloud("b", vision: true)],
+            needs: .init(requiresVision: true, isBackgrounded: false),
+            maxAttempts: 4,
+            attempt: { c in
+                calls.append(c.id)
+                return "from-\(c.id)"
+            }
+        )
+        XCTAssertEqual(out, "from-b")
+        XCTAssertEqual(calls, ["b"], "must not spend an attempt on a text-only lead candidate")
+    }
+
+    func testVisionTurnWithNoVisionCandidateThrows() async {
+        do {
+            _ = try await ModelCascade.run(
+                candidates: [cloud("a", vision: false)],
+                needs: .init(requiresVision: true, isBackgrounded: false),
+                maxAttempts: 4,
+                attempt: { _ in "should-not-run" }
+            )
+            XCTFail("expected throw")
+        } catch let LLMError.missingAPIKey(msg) {
+            XCTAssertTrue(msg.contains("vision"), "surfaces a vision-specific no-model error")
+        } catch { XCTFail("unexpected \(error)") }
+    }
+
     func testCancellationBetweenHopsStopsChain() async {
         var calls = 0
         do {
