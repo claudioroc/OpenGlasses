@@ -304,7 +304,8 @@ struct OpenGlassesApp: App {
                     processWearablesCallbackURL(url, source: "SwiftUI")
                 }
         }
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChange(of: scenePhase) {
+            let newPhase = scenePhase
             // Plan W: feed foreground state into the presence throttle (background ⇒ away ⇒ paused).
             appState.notePresenceForeground(newPhase == .active)
             switch newPhase {
@@ -360,7 +361,7 @@ struct OpenGlassesApp: App {
                     }
                 }
                 // Rearm wake word on foreground unless a live session owns the mic.
-                if appState.currentMode == .direct || appState.currentMode == .meeting {
+                if !appState.currentMode.isRealtime {
                     Task {
                         let regState = appState.registrationStateRaw
                         guard regState >= 3 else {
