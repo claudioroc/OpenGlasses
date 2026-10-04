@@ -25,4 +25,14 @@ final class LocationServiceTests: XCTestCase {
         service.geocodedPlace = "Auckland, New Zealand"
         XCTAssertEqual(service.locationContext, "Auckland, New Zealand")
     }
+
+    func testLocationContextAppendsNearbyMapPlaces() {
+        let service = LocationService()
+        service.geocodedPlace = "Westbourne Gardens, W2"
+        service.nearbyPlaces = "Tesco Express 20m, Royal Oak 40m"
+        XCTAssertEqual(
+            service.locationContext,
+            "Westbourne Gardens, W2. Nearby: Tesco Express 20m, Royal Oak 40m"
+        )
+    }
 }

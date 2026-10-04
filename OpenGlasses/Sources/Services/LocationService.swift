@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import MapKit
 
 /// The region-monitoring surface a geofence tool needs (BK P1). Abstracting it lets `GeofenceTool`
 /// route through the app's single `CLLocationManager`/delegate (`LocationService`) in production,
@@ -25,6 +26,8 @@ class LocationService: NSObject, ObservableObject {
     @Published var currentLocation: CLLocation?
     /// Human-readable place for the current location (reverse geocoded).
     @Published var geocodedPlace: String?
+    /// Closest Apple Maps points of interest (shop/cafe/station names).
+    @Published var nearbyPlaces: String?
     @Published var locationError: String?
     @Published var isAuthorized: Bool = false
 
@@ -60,9 +63,17 @@ class LocationService: NSObject, ObservableObject {
 
     /// Returns a human-readable location string for LLM context
     var locationContext: String? {
-        if let geocodedPlace { return geocodedPlace }
-        guard let location = currentLocation else { return nil }
-        return String(format: "%.4f, %.4f", location.coordinate.latitude, location.coordinate.longitude)
+        var parts: [String] = []
+        if let geocodedPlace, !geocodedPlace.isEmpty {
+            parts.append(geocodedPlace)
+        } else if let location = currentLocation {
+            parts.append(String(format: "%.4f, %.4f", location.coordinate.latitude, location.coordinate.longitude))
+        }
+        if parts.isEmpty { return nil }
+        if let nearbyPlaces, !nearbyPlaces.isEmpty {
+            parts.append("Nearby: \(nearbyPlaces)")
+        }
+        return parts.joined(separator: ". ")
     }
 
     /// Reverse geocode the current location to a human-readable place. A small on-device model
@@ -70,9 +81,41 @@ class LocationService: NSObject, ObservableObject {
     /// coordinates remain the fallback while geocoding is pending or offline.
     private func reverseGeocode(_ location: CLLocation) {
         Task { @MainActor [weak self] in
-            guard let place = await GeocodingHelper.reverseGeocode(location) else { return }
-            self?.geocodedPlace = place.cityState ?? place.fullAddress
-            print("📍 Location: \(self?.geocodedPlace ?? "unknown")")
+            guard let self else { return }
+            if let place = await GeocodingHelper.reverseGeocode(location) {
+                self.geocodedPlace = place.cityState ?? place.fullAddress
+            }
+            if let nearby = await Self.nearbyMapNames(around: location) {
+                self.nearbyPlaces = nearby
+            }
+            print("📍 Location: \(self.locationContext ?? "unknown")")
+        }
+    }
+
+    /// Closest named places from Apple Maps, already formatted for the Describe prompt.
+    static func nearbyMapNames(around location: CLLocation, radius: CLLocationDistance = 150) async -> String? {
+        let request = MKLocalPointsOfInterestRequest(center: location.coordinate, radius: radius)
+        do {
+            let search = MKLocalSearch(request: request)
+            let response = try await search.start()
+            var seen = Set<String>()
+            var names: [String] = []
+            for item in response.mapItems.prefix(6) {
+                guard let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                    continue
+                }
+                let key = name.lowercased()
+                if seen.contains(key) { continue }
+                seen.insert(key)
+                if let itemLocation = item.location {
+                    names.append("\(name) \(Int(location.distance(from: itemLocation)))m")
+                } else {
+                    names.append(name)
+                }
+            }
+            return names.isEmpty ? nil : names.joined(separator: ", ")
+        } catch {
+            return nil
         }
     }
 }
