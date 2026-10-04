@@ -33,9 +33,16 @@ struct VoiceTab: View {
 
                 // Status pills row
                 StatusPillsRow(
-                    openClawBridge: appState.openClawBridge
+                    openClawBridge: appState.openClawBridge,
+                    glasses: appState.glassesService
                 )
                 .padding(.top, 8)
+
+                MetaPairingBanner(glasses: appState.glassesService) {
+                    Task { await appState.reconnectToMetaAI() }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
 
                 // Status card
                 StatusIndicator(session: session, openAISession: openAISession)
@@ -208,11 +215,60 @@ private struct VoiceTabControls: View {
     }
 }
 
+// MARK: - Meta pairing banner
+
+/// Shown on the Voice tab whenever no glasses device is present — including after a failed
+/// first onboarding (glasses were off) so the user can reopen Meta AI without hunting Settings.
+struct MetaPairingBanner: View {
+    @ObservedObject var glasses: GlassesConnectionService
+    @Environment(\.appAccent) private var accent
+    let onConnect: () -> Void
+
+    var body: some View {
+        if glasses.isConnected {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Glasses not connected")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(.label))
+                Text(glasses.connectionStatus == "Not connected" || glasses.connectionStatus == "Disconnected"
+                     ? "Turn the glasses on, then tap Connect. This opens the Meta app so you can approve OpenGlasses again."
+                     : glasses.connectionStatus)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: onConnect) {
+                    HStack {
+                        if glasses.isPairing {
+                            ProgressView().tint(.white)
+                        }
+                        Text(glasses.isPairing ? "Opening Meta…" : "Connect Glasses")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(accent, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .disabled(glasses.isPairing)
+                .accessibilityLabel("Connect Glasses")
+                .accessibilityHint("Opens the Meta app to pair OpenGlasses")
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+}
+
 // MARK: - Status Pills Row
 
 struct StatusPillsRow: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var openClawBridge: OpenClawBridge
+    @ObservedObject var glasses: GlassesConnectionService
 
     var body: some View {
         HStack {
@@ -223,20 +279,24 @@ struct StatusPillsRow: View {
             }
         }
         .padding(.horizontal, 16)
+        .onReceive(glasses.objectWillChange) { _ in }
     }
 
     @State private var showDisconnectConfirm = false
 
     private var glassesPill: some View {
-        let connected = appState.isConnected
-        let color: Color = connected ? .green : .red.opacity(0.7)
-        let label = connected ? (appState.glassesService.deviceName ?? "Glasses") : "Disconnected"
+        let connected = appState.glassesService.isConnected
+        let pairing = appState.glassesService.isPairing
+        let color: Color = connected ? .green : (pairing ? .orange : .red.opacity(0.7))
+        let label = connected
+            ? (appState.glassesService.deviceName ?? "Glasses")
+            : (pairing ? "Connecting" : "Connect")
 
         return Button {
             if connected {
                 showDisconnectConfirm = true
             } else {
-                Task { await appState.glassesService.connect() }
+                Task { await appState.reconnectToMetaAI() }
             }
         } label: {
             HStack(spacing: 6) {
@@ -244,6 +304,13 @@ struct StatusPillsRow: View {
                     .foregroundStyle(color)
                 if connected {
                     Circle().fill(color).frame(width: 6, height: 6)
+                    Text(appState.glassesService.deviceName ?? "Glasses")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(.label))
+                } else {
+                    Text(appState.glassesService.isPairing ? "Connecting…" : "Connect")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(.label))
                 }
             }
             .padding(.horizontal, 12)

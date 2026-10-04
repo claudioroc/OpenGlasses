@@ -283,7 +283,7 @@ struct QuickActionsGrid: View {
     private var isExecutingAction: Bool { executingActionId != nil }
 
     private var visible: Bool {
-        guard appState.isConnected && appState.currentMode == .direct && !actions.isEmpty else { return false }
+        guard appState.glassesService.isConnected && appState.currentMode == .direct && !actions.isEmpty else { return false }
         // Stay visible while an action is executing (shows spinner)
         if isExecutingAction { return true }
         // Otherwise hide when busy
@@ -294,7 +294,7 @@ struct QuickActionsGrid: View {
     }
 
     var body: some View {
-        if appState.isConnected && appState.currentMode == .direct && !allActions.isEmpty {
+        if appState.glassesService.isConnected && appState.currentMode == .direct && !allActions.isEmpty {
             let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
             LazyVGrid(columns: columns, spacing: 8) {

@@ -1171,6 +1171,16 @@ struct HardwarePrivacyView: View {
                         .monospacedDigit()
                 }
                 Button {
+                    Task { await appState.reconnectToMetaAI() }
+                } label: {
+                    if appState.glassesService.isPairing {
+                        Label("Connecting to Meta AI…", systemImage: "antenna.radiowaves.left.and.right")
+                    } else {
+                        Label("Connect to Meta AI", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                }
+                .disabled(appState.glassesService.isPairing)
+                Button {
                     guard !resetMetaBusy else { return }
                     resetMetaBusy = true
                     resetMetaMessage = nil
@@ -1197,7 +1207,7 @@ struct HardwarePrivacyView: View {
             } header: {
                 Text("Glasses Diagnostics")
             } footer: {
-                Text("Use when camera/wake word stick after Meta registration goes stale. Stops mic + camera first, then re-registers with Meta.")
+                Text("Connect reopens the Meta pairing sheet if the first flow failed (glasses were off). Reset unregisters with Meta and starts over.")
             }
 
             Section {

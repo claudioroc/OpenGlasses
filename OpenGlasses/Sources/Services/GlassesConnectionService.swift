@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import MWDATCore
 
 /// Service for connecting to Ray-Ban Meta smart glasses
@@ -9,9 +10,12 @@ class GlassesConnectionService: ObservableObject {
     @Published var connectionStatus: String = "Not connected"
     @Published var deviceName: String?
     @Published var batteryLevel: Int?
+    /// True while a user-tapped Connect is unregistering / opening Meta / waiting for approval.
+    @Published var isPairing: Bool = false
 
     private var devicesListenerToken: (any AnyListenerToken)?
     private var connectedDeviceId: DeviceIdentifier?
+    private var isPairingInFlight = false
 
     init() {
         // Wearables observers are attached explicitly after successful SDK configure.
@@ -43,36 +47,95 @@ class GlassesConnectionService: ObservableObject {
             isConnected = false
             deviceName = nil
             batteryLevel = nil
-            connectionStatus = "Disconnected"
+            if !isPairing {
+                connectionStatus = "Disconnected"
+            }
         }
     }
 
-    func connect() async {
-        connectionStatus = "Registering..."
-        let stateBefore = Wearables.shared.registrationState
-        print("📋 Registration state before: \(stateBefore)")
+    var currentRegistrationStateRaw: Int {
+        Wearables.shared.registrationState.rawValue
+    }
 
+    var hasDevice: Bool {
+        !Wearables.shared.devices.isEmpty || connectedDeviceId != nil
+    }
+
+    /// Start (or restart) DAT registration. Does not mark the glasses connected — that happens
+    /// when a device appears on the listener.
+    func connect() async {
+        await reconnectToMeta()
+    }
+
+    /// User-initiated Connect. Always reopens the Meta companion.
+    ///
+    /// If the first flow ran while the glasses were off, the SDK can sit at a non-zero
+    /// registration state with **no device**. Later `startRegistration()` calls then no-op
+    /// and never reopen Meta. Unregister first so the approval sheet shows again.
+    func reconnectToMeta() async {
+        guard !isPairingInFlight else { return }
+        isPairingInFlight = true
+        isPairing = true
+        defer {
+            isPairingInFlight = false
+            isPairing = false
+        }
+
+        startObserving()
+
+        let state = Wearables.shared.registrationState.rawValue
+        let devicePresent = hasDevice
+        print("📋 Reconnect to Meta — state=\(state) hasDevice=\(devicePresent)")
+
+        if RegistrationFlow.needsFreshMetaPairing(stateRaw: state, hasDevice: devicePresent) {
+            connectionStatus = "Resetting Meta pairing…"
+            do {
+                try await Wearables.shared.startUnregistration()
+                print("📋 Unregistered before retry")
+            } catch {
+                print("📋 Unregistration failed: \(error)")
+            }
+            isConnected = false
+            UserDefaults.standard.set(false, forKey: "hasRegisteredWithMeta")
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
+
+        connectionStatus = "Opening Meta app…"
         do {
             try await Wearables.shared.startRegistration()
-
-            // Poll registration state. `startRegistration()` returns before the user approves the
-            // app in the Meta AI companion app, and that approval has been seen to take ~25s — so
-            // wait that long (RegistrationFlow policy) and, throughout, show an actionable "approve
-            // in Meta AI" status instead of giving up early with a cryptic internal state number.
-            var stateAfter = Wearables.shared.registrationState
-            let deadline = ContinuousClock.now + .seconds(RegistrationFlow.approvalDeadlineSeconds)
-            while !RegistrationFlow.isRegistered(stateRaw: stateAfter.rawValue), ContinuousClock.now < deadline {
-                connectionStatus = RegistrationFlow.status(stateRaw: stateAfter.rawValue)
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                stateAfter = Wearables.shared.registrationState
-            }
-
-            print("✅ startRegistration() succeeded, state: \(stateAfter)")
-            connectionStatus = RegistrationFlow.status(stateRaw: stateAfter.rawValue)
+            print("📋 startRegistration after reconnect")
         } catch {
             print("❌ startRegistration() failed: \(error)")
             connectionStatus = "Connection failed: \(error.localizedDescription)"
         }
+
+        openMetaCompanionApp()
+
+        var stateAfter = Wearables.shared.registrationState
+        let deadline = ContinuousClock.now + .seconds(RegistrationFlow.approvalDeadlineSeconds)
+        while !RegistrationFlow.isRegistered(stateRaw: stateAfter.rawValue), ContinuousClock.now < deadline {
+            connectionStatus = RegistrationFlow.status(stateRaw: stateAfter.rawValue)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            stateAfter = Wearables.shared.registrationState
+        }
+
+        if RegistrationFlow.isRegistered(stateRaw: stateAfter.rawValue) {
+            if Wearables.shared.devices.isEmpty {
+                connectionStatus = RegistrationFlow.retryHint(stateRaw: stateAfter.rawValue, hasDevice: false)
+                openMetaCompanionApp()
+            } else {
+                connectionStatus = RegistrationFlow.status(stateRaw: stateAfter.rawValue)
+            }
+        } else {
+            connectionStatus = RegistrationFlow.retryHint(stateRaw: stateAfter.rawValue, hasDevice: false)
+            openMetaCompanionApp()
+        }
+    }
+
+    func openMetaCompanionApp() {
+        guard let url = URL(string: RegistrationFlow.metaCompanionURLString) else { return }
+        UIApplication.shared.open(url, options: [:])
+        print("📋 Opened Meta companion \(RegistrationFlow.metaCompanionURLString)")
     }
 
     func disconnect() {

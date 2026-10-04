@@ -148,6 +148,7 @@ struct BottomControlBar: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 4)
+        .onReceive(appState.glassesService.objectWillChange) { _ in }
         // Keep clear of home indicator / Dynamic Island safe areas
         .safeAreaPadding(.bottom, 2)
     }
@@ -213,15 +214,13 @@ struct BottomControlBar: View {
             ) {
                 appState.endListeningSession()
             }
-        } else if !appState.isConnected && !Config.silentMode {
+        } else if !appState.glassesService.isConnected {
             ActionCapsule(
                 icon: "OpenGlassesLogo",
-                label: "Connect",
+                label: appState.glassesService.isPairing ? "Connecting…" : "Connect",
                 color: accent
             ) {
-                Task {
-                    await appState.connectAndListen()
-                }
+                Task { await appState.reconnectToMetaAI() }
             }
         } else {
             ActionCapsule(
@@ -243,9 +242,13 @@ struct BottomControlBar: View {
 
     @ViewBuilder
     private var cameraButton: some View {
-        if !appState.isConnected {
-            BarButton(icon: "OpenGlassesLogo", label: "Connect", compact: true) {
-                Task { await appState.glassesService.connect() }
+        if !appState.glassesService.isConnected {
+            BarButton(
+                icon: "OpenGlassesLogo",
+                label: appState.glassesService.isPairing ? "Wait" : "Connect",
+                compact: true
+            ) {
+                Task { await appState.reconnectToMetaAI() }
             }
         } else if isRealtime {
             BarButton(

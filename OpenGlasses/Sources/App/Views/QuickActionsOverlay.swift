@@ -17,7 +17,7 @@ struct QuickActionsOverlay: View {
     }
 
     var body: some View {
-        if appState.isConnected && isIdle && appState.currentMode == .direct && !actions.isEmpty {
+        if appState.glassesService.isConnected && isIdle && appState.currentMode == .direct && !actions.isEmpty {
             HStack(spacing: 12) {
                 ForEach(actions) { action in
                     Button {

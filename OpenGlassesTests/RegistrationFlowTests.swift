@@ -28,4 +28,23 @@ final class RegistrationFlowTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(RegistrationFlow.approvalDeadlineSeconds, 25,
             "Meta AI approval has been observed to take ~25s; the old 10s deadline gave up too early")
     }
+
+    func testNeedsFreshMetaPairingWhenGlassesWereOff() {
+        XCTAssertFalse(RegistrationFlow.needsFreshMetaPairing(stateRaw: 0, hasDevice: false))
+        XCTAssertFalse(RegistrationFlow.needsFreshMetaPairing(stateRaw: 3, hasDevice: true))
+        XCTAssertTrue(RegistrationFlow.needsFreshMetaPairing(stateRaw: 1, hasDevice: false))
+        XCTAssertTrue(RegistrationFlow.needsFreshMetaPairing(stateRaw: 3, hasDevice: false),
+                      "registered with no device is the glasses-off first-flow trap")
+    }
+
+    func testRetryHintTellsTheUserToOpenMetaAgain() {
+        let hint = RegistrationFlow.retryHint(stateRaw: 3, hasDevice: false)
+        XCTAssertTrue(hint.contains("Connect"))
+        XCTAssertTrue(hint.localizedCaseInsensitiveContains("Meta"))
+        XCTAssertFalse(hint.contains(where: \.isNumber), "no internal state digits")
+    }
+
+    func testMetaCompanionURL() {
+        XCTAssertEqual(RegistrationFlow.metaCompanionURLString, "fb-viewapp://")
+    }
 }

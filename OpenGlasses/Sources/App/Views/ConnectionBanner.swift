@@ -59,6 +59,7 @@ struct ConnectionBanner: View {
         }
         .padding(.vertical, 8)
         .animation(.easeInOut(duration: 0.2), value: expandedPill)
+        .onReceive(appState.glassesService.objectWillChange) { _ in }
     }
 
     // MARK: - Row 1: Status Icons
@@ -304,12 +305,12 @@ struct ConnectionBanner: View {
                     .foregroundStyle(.white.opacity(0.75))
             }
 
-            if appState.registrationStateRaw < 3 {
+            if !appState.glassesService.isConnected {
                 Button {
-                    Task { await appState.completeAuthorizationInMetaAI() }
+                    Task { await appState.reconnectToMetaAI() }
                     withAnimation { expandedPill = nil }
                 } label: {
-                    Text("Complete in Meta AI")
+                    Text(appState.glassesService.isPairing ? "Connecting to Meta…" : "Connect in Meta AI")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
@@ -379,12 +380,12 @@ struct ConnectionBanner: View {
                 }
             }
 
-            if !appState.isConnected {
+            if !appState.glassesService.isConnected {
                 Button {
-                    Task { await appState.glassesService.connect() }
+                    Task { await appState.reconnectToMetaAI() }
                     withAnimation { expandedPill = nil }
                 } label: {
-                    Text("Connect Glasses")
+                    Text(appState.glassesService.isPairing ? "Connecting…" : "Connect Glasses")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(accent)
                 }
