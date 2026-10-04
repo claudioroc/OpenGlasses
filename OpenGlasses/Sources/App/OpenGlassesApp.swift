@@ -359,8 +359,8 @@ struct OpenGlassesApp: App {
                         }
                     }
                 }
-                // Only restart wake word listener in Direct Mode
-                if appState.currentMode == .direct {
+                // Rearm wake word on foreground unless a live session owns the mic.
+                if appState.currentMode == .direct || appState.currentMode == .meeting {
                     Task {
                         let regState = appState.registrationStateRaw
                         guard regState >= 3 else {
@@ -534,6 +534,8 @@ class AppState: ObservableObject, AppStateProtocol {
     let locationService = LocationService()
     let proactiveAlerts = ProactiveAlertService()
     let ambientCaptions = AmbientCaptionService()
+    @Published var phoneAlertText: String?
+    private var phoneAlertClearTask: Task<Void, Never>?
     let glassesDisplay = GlassesDisplayService()
 
     /// Presence-aware throttle (Plan W): fuses cheap on-device signals into an engagement mode that
@@ -786,6 +788,10 @@ class AppState: ObservableObject, AppStateProtocol {
         audioRecorder.wakeWordService = wakeWordService
         audioRecorder.ambientCaptionService = ambientCaptions
         audioRecorder.meetingAssistant = meetingAssistant
+        audioRecorder.onRecordingStopped = { [weak self] in
+            await self?.rearmWakeWordAfterRecording()
+        }
+        ConversateReadbackService.shared.wakeWordService = wakeWordService
         audioRecorder.llmClosure = { [weak self] prompt in
             guard let self else { throw LLMError.missingAPIKey("AppState deallocated") }
             return try await self.llmService.sendMessage(prompt)
@@ -1102,8 +1108,17 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         // MCP Glasses server (Plan E, dev-only) — configure and start if both gates are on.
-        MCPGlassesServer.shared.configure(camera: cameraService, tts: speechService)
+        MCPGlassesServer.shared.configure(camera: cameraService, tts: speechService, glassesDisplay: glassesDisplay)
         MCPGlassesServer.shared.startIfEnabled()
+        MCPGlassesServer.shared.onPhoneAlert = { [weak self] text in
+            guard let self else { return }
+            self.phoneAlertText = text
+            self.phoneAlertClearTask?.cancel()
+            self.phoneAlertClearTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                if self.phoneAlertText == text { self.phoneAlertText = nil }
+            }
+        }
 
         // Pre-fetch Home Assistant entity cache for fuzzy matching
         Task { await HomeAssistantEntityCache.shared.refreshIfNeeded() }
@@ -1986,7 +2001,7 @@ class AppState: ObservableObject, AppStateProtocol {
 
     /// Start the dev-only MCP glasses server (Plan E) with this AppState's services.
     func startMCPServer() {
-        MCPGlassesServer.shared.configure(camera: cameraService, tts: speechService)
+        MCPGlassesServer.shared.configure(camera: cameraService, tts: speechService, glassesDisplay: glassesDisplay)
         MCPGlassesServer.shared.start()
     }
 
@@ -3749,6 +3764,20 @@ class AppState: ObservableObject, AppStateProtocol {
         liveActivityManager.end()
 
         NSLog("[OpenGlasses] Quick disconnect — all glasses services stopped")
+    }
+
+
+    /// WW-1: rearm wake word after meeting/audio recording ends.
+    func rearmWakeWordAfterRecording() async {
+        guard registrationStateRaw >= 3 else { return }
+        guard !wakeWordService.isListening, !isListening, isConnected, !micMuted, !Config.silentMode else { return }
+        do {
+            await wakeWordService.reconfigureAudioSession()
+            try await wakeWordService.startListening()
+            addDebugEvent("Wake word rearmed after recording")
+        } catch {
+            addDebugEvent("Wake word rearm after recording failed: \(error.localizedDescription)")
+        }
     }
 
     func returnToWakeWord() async {

@@ -111,6 +111,10 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         guard !didHoldPause else { return }
         didHoldPause = true   // set before the await so a concurrent beginPause can't double-hold
         await wakeWordService?.pauseOtherAudio()
+        // Optional hard mute of recognition during TTS when configured.
+        if Config.muteMicDuringTTS {
+            wakeWordService?.pauseHotwordDetection()
+        }
         coexistToken = AudioSessionCoordinator.shared.beginCoexisting(.textToSpeech)
     }
 
@@ -120,6 +124,10 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         if let token = coexistToken {
             coexistToken = nil
             AudioSessionCoordinator.shared.endCoexisting(token)
+        }
+        if Config.muteMicDuringTTS {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            wakeWordService?.resumeHotwordDetection()
         }
         // BJ PR2: await the resume so a teardown (barge-in / stopSpeaking) doesn't return before
         // other audio is actually restored (was fire-and-forget).

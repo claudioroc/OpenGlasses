@@ -22,6 +22,8 @@ class AudioRecordingService: ObservableObject {
     weak var ambientCaptionService: AmbientCaptionService?
     weak var meetingAssistant: MeetingAssistantService?
     var llmClosure: ((String) async throws -> String)?
+    /// Called after a recording cycle ends so the app can rearm wake word (WW-1).
+    var onRecordingStopped: (() async -> Void)?
 
     private var writer: AVAssetWriter?
     private nonisolated(unsafe) var audioInput: AVAssetWriterInput?
@@ -44,6 +46,12 @@ class AudioRecordingService: ObservableObject {
 
     func startRecording() throws {
         guard !isRecording else { return }
+
+        // Reject start when no input route is available (Bluetooth mic still registering).
+        let inputs = AVAudioSession.sharedInstance().currentRoute.inputs
+        guard !inputs.isEmpty else {
+            throw AudioRecordingError.noInputDevice
+        }
 
         let tempDir = FileManager.default.temporaryDirectory
         let fileName = "OG_Audio_\(Int(Date().timeIntervalSince1970)).m4a"
@@ -128,12 +136,28 @@ class AudioRecordingService: ObservableObject {
         self.audioInput = nil
         self.outputURL = nil
 
-        guard let src = tempURL else { return nil }
-
-        if autoSaveToFiles {
-            return saveToDocuments(src)
+        guard let src = tempURL else {
+            await onRecordingStopped?()
+            return nil
         }
-        return src
+
+        // Plan 1: reject header-only / silent captures so Meeting mode doesn't keep 0-byte files.
+        let size = (try? FileManager.default.attributesOfItem(atPath: src.path)[.size] as? NSNumber)?.intValue ?? 0
+        if size <= 4096 {
+            NSLog("[AudioRecording] Empty capture discarded (%d bytes)", size)
+            try? FileManager.default.removeItem(at: src)
+            await onRecordingStopped?()
+            return nil
+        }
+
+        let saved: URL?
+        if autoSaveToFiles {
+            saved = saveToDocuments(src)
+        } else {
+            saved = src
+        }
+        await onRecordingStopped?()
+        return saved
     }
 
     // MARK: - Private
@@ -224,5 +248,17 @@ class AudioRecordingService: ObservableObject {
         )
 
         audioInput.append(sb)
+    }
+}
+
+enum AudioRecordingError: LocalizedError {
+    case noInputDevice
+    case emptyCapture
+
+    var errorDescription: String? {
+        switch self {
+        case .noInputDevice: return "No microphone input route available"
+        case .emptyCapture: return "Recording contained no audio"
+        }
     }
 }

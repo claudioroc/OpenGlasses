@@ -324,6 +324,12 @@ class CameraService: ObservableObject {
                 NSLog("[Camera] Glasses capture failed (%@) — falling back to iPhone back camera",
                       error.localizedDescription)
                 if allowPhoneFallback {
+                    // J1: captureFromGlasses may have left an orphan glasses session
+                    // mounting after the failure. Tear it down unless continuous
+                    // streaming already had a legitimate owner.
+                    if !isStreaming {
+                        await resetSession()
+                    }
                     return try await phoneSource.capturePhoto()
                 }
                 throw error
@@ -479,6 +485,16 @@ class CameraService: ObservableObject {
                     NSLog("[Camera] ⚠️ Decoder stall detected (%.1fs since last frame) — auto-recovering", elapsed)
                     self.isRecoveringFromStall = true
                     self.stallRecoveryCount += 1
+                    // I2: hard ceiling — stale Meta registration used to loop forever.
+                    if self.stallRecoveryCount > 3 {
+                        NSLog("[Camera] Stall recovery ceiling hit (%d) — tearing down", self.stallRecoveryCount)
+                        self.onDebugEvent?("Camera stall recovery gave up after \(self.stallRecoveryCount) attempts")
+                        self.stopStallDetection()
+                        await self.resetSession()
+                        self.isStreaming = false
+                        self.isRecoveringFromStall = false
+                        break
+                    }
                     await self.recoverFromStall()
                     self.isRecoveringFromStall = false
                 }
@@ -505,10 +521,12 @@ class CameraService: ObservableObject {
             try await ensureSession()
             try await waitForStreaming()
             lastFrameTime = Date()
+            stallRecoveryCount = 0
             NSLog("[Camera] Stall recovery successful — streaming resumed")
         } catch {
             NSLog("[Camera] Stall recovery failed: %@", error.localizedDescription)
             isStreaming = false
+            stopStallDetection()
         }
     }
 

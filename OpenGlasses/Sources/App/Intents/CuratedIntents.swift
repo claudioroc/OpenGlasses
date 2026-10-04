@@ -142,3 +142,36 @@ struct ToggleBroadcastIntent: AppIntent {
         )
     }
 }
+
+
+/// Start Conversate mode — ambient translate + audio readback on Ray-Ban.
+struct StartConversateIntent: AppIntent {
+    static var title: LocalizedStringResource = "Start Conversate"
+    static var description = IntentDescription("Translate ambient speech and read it back through the glasses speaker")
+    static var isDiscoverable: Bool { true }
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        Config.setConversateEnabled(true)
+        let appState = try await IntentSupport.awaitConnectedAppState()
+        ConversateReadbackService.shared.wakeWordService = appState.wakeWordService
+        appState.ambientCaptions.start()
+        return .result(dialog: "Conversate on")
+    }
+}
+
+/// Stop Conversate mode.
+struct StopConversateIntent: AppIntent {
+    static var title: LocalizedStringResource = "Stop Conversate"
+    static var description = IntentDescription("Stop ambient translation readback")
+    static var isDiscoverable: Bool { true }
+    static var openAppWhenRun: Bool = false
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        Config.setConversateEnabled(false)
+        ConversateReadbackService.shared.stop()
+        return .result(dialog: "Conversate off")
+    }
+}

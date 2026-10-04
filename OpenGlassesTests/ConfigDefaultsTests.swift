@@ -10,7 +10,7 @@ final class ConfigDefaultsTests: XCTestCase {
         "silentMode", "glassesOnlyAudio", "audioOnlyMode", "memoryNudgesEnabled",
         "showAllQuickActions", "siriAskOpensApp", "mcpServerEnabled", "accessibilityModeEnabled",
         // Cohort 2
-        "usePhoneMicForTranslation", "glassesDisplayEnabled", "intentClassifierEnabled",
+        "usePhoneMicForTranslation", "glassesDisplayEnabled", "conversateEnabled", "muteMicDuringTTS", "intentClassifierEnabled",
         "llmComplexityClassifierEnabled", "agentOnboardingComplete", "contextualEmbeddingEnabled",
         "frameDedupEnabled", "visualStateMemoryEnabled",
         // Cohort 3
@@ -40,6 +40,8 @@ final class ConfigDefaultsTests: XCTestCase {
         XCTAssertFalse(Config.accessibilityModeEnabled)
         XCTAssertFalse(Config.usePhoneMicForTranslation)
         XCTAssertFalse(Config.glassesDisplayEnabled)
+        XCTAssertFalse(Config.conversateEnabled)
+        XCTAssertFalse(Config.muteMicDuringTTS)
         XCTAssertFalse(Config.intentClassifierEnabled)
         XCTAssertFalse(Config.llmComplexityClassifierEnabled)
         XCTAssertFalse(Config.agentOnboardingComplete)
@@ -67,7 +69,7 @@ final class ConfigDefaultsTests: XCTestCase {
         assertRoundTrip("mcpServerEnabled", set: Config.setMCPServerEnabled, get: { Config.mcpServerEnabled })
         assertRoundTrip("accessibilityModeEnabled", set: Config.setAccessibilityModeEnabled, get: { Config.accessibilityModeEnabled })
         assertRoundTrip("usePhoneMicForTranslation", set: Config.setUsePhoneMicForTranslation, get: { Config.usePhoneMicForTranslation })
-        assertRoundTrip("glassesDisplayEnabled", set: Config.setGlassesDisplayEnabled, get: { Config.glassesDisplayEnabled })
+        assertRoundTrip("glassesDisplayEnabled", "conversateEnabled", "muteMicDuringTTS", set: Config.setGlassesDisplayEnabled, get: { Config.glassesDisplayEnabled })
         assertRoundTrip("intentClassifierEnabled", set: Config.setIntentClassifierEnabled, get: { Config.intentClassifierEnabled })
         assertRoundTrip("llmComplexityClassifierEnabled", set: Config.setLLMComplexityClassifierEnabled, get: { Config.llmComplexityClassifierEnabled })
         assertRoundTrip("agentOnboardingComplete", set: Config.setAgentOnboardingComplete, get: { Config.agentOnboardingComplete })

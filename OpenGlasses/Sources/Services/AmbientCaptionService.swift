@@ -313,6 +313,26 @@ class AmbientCaptionService: ObservableObject {
         }
 
         currentCaption = ""
+
+        if Config.conversateEnabled {
+            Task { await self.handleConversate(entry) }
+        }
+    }
+
+    /// Translate + audio readback for Conversate. Skips the wearer when diarized as speaker 0
+    /// only if a registry name matches common self labels; otherwise always reads back.
+    private func handleConversate(_ entry: CaptionEntry) async {
+        // Skip self when diarization labeled the wearer explicitly.
+        if let speaker = entry.speaker,
+           let name = speakerRegistry.name(for: speaker)?.lowercased(),
+           ["me", "self", "claudio", "wearer"].contains(name) {
+            return
+        }
+        let translated = await ConversationTranslator.shared.translate(entry.text)
+        if translated != entry.text {
+            glassesDisplay?.showText(translated)
+        }
+        ConversateReadbackService.shared.enqueue(translated)
     }
 
     private func resetSilenceTimer() {

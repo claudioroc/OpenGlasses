@@ -1104,6 +1104,8 @@ struct HardwarePrivacyView: View {
     @Binding var conversationEncryptionEnabled: Bool
     @Binding var isTogglingEncryption: Bool
     @State private var showEncryptionInfo = false
+    @State private var resetMetaBusy = false
+    @State private var resetMetaMessage: String?
 
     var body: some View {
         Form {
@@ -1156,6 +1158,97 @@ struct HardwarePrivacyView: View {
                 } label: {
                     Label("Insights", systemImage: "chart.bar")
                 }
+            } header: {
+                Text("Display & Capture")
+            }
+
+            Section {
+                HStack {
+                    Text("Meta registration")
+                    Spacer()
+                    Text("state \(appState.registrationStateRaw)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Button {
+                    guard !resetMetaBusy else { return }
+                    resetMetaBusy = true
+                    resetMetaMessage = nil
+                    Task {
+                        appState.wakeWordService.stopListening()
+                        await appState.cameraService.tearDown()
+                        await appState.resetMetaRegistration()
+                        resetMetaMessage = "Reset finished — state \(appState.registrationStateRaw). Open Meta View app if prompted."
+                        resetMetaBusy = false
+                    }
+                } label: {
+                    if resetMetaBusy {
+                        Label("Resetting Meta Registration…", systemImage: "arrow.triangle.2.circlepath")
+                    } else {
+                        Label("Reset Meta Registration", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(resetMetaBusy)
+                if let resetMetaMessage {
+                    Text(resetMetaMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Glasses Diagnostics")
+            } footer: {
+                Text("Use when camera/wake word stick after Meta registration goes stale. Stops mic + camera first, then re-registers with Meta.")
+            }
+
+            Section {
+                InfoToggle(
+                    title: "Conversate Mode",
+                    isOn: Binding(
+                        get: { Config.conversateEnabled },
+                        set: { newValue in
+                            Config.setConversateEnabled(newValue)
+                            if newValue {
+                                appState.ambientCaptions.start()
+                            }
+                        }
+                    ),
+                    info: "Translates ambient speech and reads it back through the glasses speaker. Ray-Ban output is audio only. Hard-mutes recognition during readback to prevent feedback loops."
+                )
+                InfoToggle(
+                    title: "Conversate Readback",
+                    isOn: Binding(
+                        get: { Config.conversateReadbackEnabled },
+                        set: { Config.setConversateReadbackEnabled($0) }
+                    ),
+                    info: "Speak the translated line aloud. Turn off to keep phone captions only."
+                )
+                Picker("Conversate Target Language", selection: Binding(
+                    get: { Config.conversateTargetLocaleIdentifier },
+                    set: { Config.setConversateTargetLocaleIdentifier($0) }
+                )) {
+                    Text("English").tag("en-US")
+                    Text("Portuguese (Portugal)").tag("pt-PT")
+                    Text("Portuguese (Brazil)").tag("pt-BR")
+                    Text("Spanish").tag("es-ES")
+                    Text("French").tag("fr-FR")
+                    Text("German").tag("de-DE")
+                    Text("Italian").tag("it-IT")
+                }
+                InfoToggle(
+                    title: "Mute Mic During TTS",
+                    isOn: Binding(
+                        get: { Config.muteMicDuringTTS },
+                        set: { Config.setMuteMicDuringTTS($0) }
+                    ),
+                    info: "Hard-mutes wake-word recognition while the assistant speaks. Stops self-talk loops but disables barge-in. Conversate always mutes during readback."
+                )
+            } header: {
+                Text("Conversate")
+            } footer: {
+                Text("Equivalent of Even G2 Conversate for Ray-Ban Meta — audio only.")
+            }
+
+            Section {
                 InfoToggle(
                     title: "Use Phone Mic for Translation",
                     isOn: Binding(

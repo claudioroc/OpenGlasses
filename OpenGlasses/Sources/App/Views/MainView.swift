@@ -55,6 +55,22 @@ struct MainView: View {
                     .transition(.opacity)
                     .zIndex(1)
             }
+
+            if let alert = appState.phoneAlertText {
+                VStack {
+                    Text(alert)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.82), in: Capsule())
+                        .padding(.top, 12)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(2)
+                .allowsHitTesting(false)
+            }
         }
         .environment(\.appAccent, accent)
         .animation(.easeInOut(duration: 0.3), value: showOnboarding)

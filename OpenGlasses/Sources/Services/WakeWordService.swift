@@ -67,6 +67,22 @@ class WakeWordService: NSObject, ObservableObject {
     /// Track whether wake word already fired for this recognition session (prevent double-fire)
     private var wakeWordFired: Bool = false
 
+    /// Hard-mute recognition handling (Conversate readback / optional TTS mute).
+    /// Engine/tap stay alive so audio consumers keep running; results are ignored.
+    private var hotwordPaused = false
+
+    func pauseHotwordDetection() {
+        hotwordPaused = true
+        NSLog("[WakeWord] Hotword detection paused")
+    }
+
+    func resumeHotwordDetection() {
+        hotwordPaused = false
+        NSLog("[WakeWord] Hotword detection resumed")
+    }
+
+    var isHotwordPaused: Bool { hotwordPaused }
+
     /// Multiple audio buffer consumers keyed by ID (transcription, captions, rewind, etc.)
     private var audioBufferForwarders: [String: @Sendable (AVAudioPCMBuffer) -> Void] = [:]
 
@@ -664,6 +680,9 @@ class WakeWordService: NSObject, ObservableObject {
     }
 
     private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?) {
+        // Hard mute during TTS/Conversate readback — drop results to prevent self-talk loops.
+        guard !hotwordPaused else { return }
+
         // An intentional cancel (ensureAudioEngineRunning pausing the wake-word task so
         // the buffer forwarder can feed TranscriptionService) surfaces here as an error.
         // Consume it once and don't auto-restart — otherwise a second recognizer spins up

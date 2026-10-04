@@ -28,6 +28,9 @@ final class MCPGlassesServer: ObservableObject {
     private var connections: Set<ObjectIdentifier> = []
     private weak var camera: CameraService?
     private weak var tts: TextToSpeechService?
+    private weak var glassesDisplay: GlassesDisplayService?
+    /// Phone-side alert banner for Ray-Ban (no lens display).
+    var onPhoneAlert: ((String) -> Void)?
 
     /// Min interval a frame is reused, so a tight Claude Code poll loop can't blow up tokens.
     private var lastServedFrameAt: Date?
@@ -66,9 +69,10 @@ final class MCPGlassesServer: ObservableObject {
 
     private init() {}
 
-    func configure(camera: CameraService, tts: TextToSpeechService) {
+    func configure(camera: CameraService, tts: TextToSpeechService, glassesDisplay: GlassesDisplayService? = nil) {
         self.camera = camera
         self.tts = tts
+        self.glassesDisplay = glassesDisplay
     }
 
     // MARK: - Lifecycle
@@ -217,9 +221,14 @@ final class MCPGlassesServer: ObservableObject {
             return Self.httpResponse(status: "400 Bad Request", json: ["error": "expected {text, mode}"])
         }
         let mode = (json["mode"] as? String) ?? "tts"
-        // No display surface yet — both modes speak; "display" is logged for the future display app.
-        if mode == "display" { NSLog("[MCPServer] (display) %@", text) }
-        await tts?.speak(text, urgency: .low)
+        if mode == "display" {
+            NSLog("[MCPServer] (display) %@", text)
+            glassesDisplay?.showNotification(title: "Alert", body: text, icon: .info, duration: 8)
+            onPhoneAlert?(text)
+            await tts?.speak(text, urgency: .medium)
+        } else {
+            await tts?.speak(text, urgency: .low)
+        }
         return Self.httpResponse(status: "200 OK", json: ["ok": true, "mode": mode])
     }
 

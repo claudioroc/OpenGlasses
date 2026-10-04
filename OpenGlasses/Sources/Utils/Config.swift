@@ -2278,6 +2278,26 @@ struct Config {
 
     static func setGlassesDisplayEnabled(_ enabled: Bool) { glassesDisplayEnabled = enabled }
 
+    // MARK: - Conversate (Ray-Ban ambient translate + audio readback)
+
+    /// When on, ambient captions are translated and spoken back through the glasses speaker.
+    @UserDefaultsBacked("conversateEnabled", default: false) static var conversateEnabled: Bool
+    static func setConversateEnabled(_ enabled: Bool) { conversateEnabled = enabled }
+
+    /// BCP-47 target locale for Conversate translation (e.g. "en-US", "pt-PT").
+    @UserDefaultsBacked("conversateTargetLocale", default: "en-US") static var conversateTargetLocaleIdentifier: String
+    static func setConversateTargetLocaleIdentifier(_ id: String) { conversateTargetLocaleIdentifier = id }
+    static var conversateTargetLocale: Locale { Locale(identifier: conversateTargetLocaleIdentifier) }
+
+    /// Speak translated captions aloud (Conversate readback). Off = captions only.
+    @UserDefaultsBacked("conversateReadbackEnabled", default: true) static var conversateReadbackEnabled: Bool
+    static func setConversateReadbackEnabled(_ enabled: Bool) { conversateReadbackEnabled = enabled }
+
+    /// Hard-mute wake-word recognition while normal TTS speaks (disables barge-in).
+    /// Conversate readback always mutes regardless of this flag.
+    @UserDefaultsBacked("muteMicDuringTTS", default: false) static var muteMicDuringTTS: Bool
+    static func setMuteMicDuringTTS(_ enabled: Bool) { muteMicDuringTTS = enabled }
+
     // MARK: - Memory loop (self-improving)
 
     /// When on, the assistant offers a spoken nudge after you state a durable fact or repeat a
