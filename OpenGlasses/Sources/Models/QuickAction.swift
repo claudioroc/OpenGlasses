@@ -80,7 +80,7 @@ struct QuickAction: Codable, Identifiable {
     /// Kept separate from travel/HA extras so migrations can re-inject them after a bundle reset.
     static let smartDial: [QuickAction] = [
         QuickAction(id: "describe", label: "Describe", icon: "eye", type: .photoThenPrompt,
-                    promptText: "Describe what you see in this image in detail. Lead with the most useful facts for someone wearing glasses."),
+                    promptText: "Look through the glasses. Name the scene and the main objects or readable text in front of the wearer. Two or three spoken sentences. If it is too close, dark, or blurry, say that first."),
         QuickAction(id: "travel-translate-sign-menu", label: "Translate Sign", icon: "text.viewfinder", type: .photoThenPrompt,
                     promptText: "Read all visible text in this image. First provide exact original text, then translate to English. If helpful, use the translate tool to improve accuracy. Keep response concise for glasses."),
         QuickAction(id: "identify-plant", label: "Plant ID", icon: "leaf", type: .photoThenPrompt,
