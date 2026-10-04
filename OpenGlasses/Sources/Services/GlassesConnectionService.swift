@@ -9,7 +9,7 @@ class GlassesConnectionService: ObservableObject {
     @Published var connectionStatus: String = "Not connected"
     @Published var deviceName: String?
     @Published var batteryLevel: Int?
-    /// True while a user-tapped Connect is unregistering / opening Meta / waiting for approval.
+    /// True while a user-tapped Connect is re-running DAT registration.
     @Published var isPairing: Bool = false
 
     private var devicesListenerToken: (any AnyListenerToken)?
