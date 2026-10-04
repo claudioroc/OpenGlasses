@@ -75,6 +75,42 @@ final class MCPGlassesServer: ObservableObject {
         self.glassesDisplay = glassesDisplay
     }
 
+    func deliverPulledNotification(text: String, level: String) {
+        glassesDisplay?.showNotification(title: "Alert", body: text, icon: .info, duration: 8)
+        onPhoneAlert?(text)
+        Task { await tts?.speak(text, urgency: level == "critical" || level == "urgent" ? .medium : .low) }
+    }
+
+    func registerWithRouterIfPossible() {
+        guard let ip = Self.lanIPAddress() else { return }
+        let localToken = accessToken
+        let key = Config.savedModels.first(where: { $0.llmProvider == .custom })?.apiKey
+            ?? Config.activeModel?.apiKey
+            ?? ""
+        guard !key.isEmpty else { return }
+        Task.detached {
+            let roots = [
+                "http://192.168.10.135:3459",
+                "https://glasses-router.rochasilva.co.uk",
+            ]
+            let body: [String: String] = [
+                "base_url": "http://\(ip):8765",
+                "token": localToken,
+            ]
+            guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+            for root in roots {
+                guard let url = URL(string: root + "/v1/openglasses/register") else { continue }
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                request.httpBody = payload
+                request.timeoutInterval = 6
+                _ = try? await URLSession.shared.data(for: request)
+            }
+        }
+    }
+
     // MARK: - Lifecycle
 
     /// Start the server if the dev gates are on. No-op otherwise.

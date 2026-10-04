@@ -1110,6 +1110,8 @@ class AppState: ObservableObject, AppStateProtocol {
         // MCP Glasses server (Plan E, dev-only) — configure and start if both gates are on.
         MCPGlassesServer.shared.configure(camera: cameraService, tts: speechService, glassesDisplay: glassesDisplay)
         MCPGlassesServer.shared.startIfEnabled()
+        MCPGlassesServer.shared.registerWithRouterIfPossible()
+        NotificationPullService.shared.start()
         MCPGlassesServer.shared.onPhoneAlert = { [weak self] text in
             guard let self else { return }
             self.phoneAlertText = text
